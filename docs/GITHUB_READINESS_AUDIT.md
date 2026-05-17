@@ -77,6 +77,21 @@ Checkpoint `5ed8805` was retested from the public repo.
 - Bruce Wayne sample data remained blank: only `sample-data/bruce-wayne/README.md` and `sample-data/bruce-wayne/synthetic-records/.gitkeep`.
 - No tracked `.env`, database, SQLite, PDF, JPG/JPEG, WebP, HEIC, keystore/JKS, PFX/PEM, `google-services.json`, or `local.properties` files were found by quick scan.
 
+## Toolchain-Gate Retest Result
+
+Checkpoint `f158734` was retested as a docs/toolchain-gate-only pass.
+
+- Current classification remains `safe to build with synthetic data`.
+- No app code changes were made for this checkpoint.
+- No desktop or Android builds were run during this retest.
+- README and Android README now include a named `Android Toolchain Installation Approval Gate`.
+- Docs now provide the exact agent prompt for asking user approval before installing/configuring JDK 17, Android command-line tools or Android Studio, Android SDK Platform 35, Build-Tools, Platform-Tools, `JAVA_HOME`, `ANDROID_HOME`, or `ANDROID_SDK_ROOT`.
+- Android tooling remained missing in the laptop-style environment, and that is documented as a local machine setup gap rather than a repo defect.
+- Full desktop + Android verification remains blocked until the user approves or performs Android toolchain setup.
+- Desktop-only build remains allowed if .NET/WPF tooling is present.
+- Bruce Wayne sample data remained blank except README and `.gitkeep`.
+- Fresh source archive scan found no unsafe tracked files or generated build artifacts.
+
 ## Git History Notes
 
 The public staging repo has been recreated as a one-commit public release branch and does not include the original private repo history.
@@ -109,4 +124,4 @@ Clean release commit: the one-commit public release branch named `Initial public
 
 ## Current Decision
 
-Current tracked HEAD is safe for public source inspection and synthetic-only build testing. Desktop and Android synthetic builds passed on this machine before the clean history rewrite. The app was not launched, no provider keys were added, and no real medical records were used.
+Current tracked HEAD is safe for public source inspection and toolchain-gated synthetic build setup. Desktop and Android synthetic builds passed on this machine before the clean history rewrite; the latest `f158734` retest was docs/toolchain-gate-only and did not run builds. Android build verification requires Android tooling to be installed/configured first with explicit user approval. The app was not launched, no provider keys were added, and no real medical records were used.
