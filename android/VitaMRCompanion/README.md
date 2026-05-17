@@ -30,21 +30,21 @@ The Android companion uses:
 - `minSdk 26` / Android 8.0+.
 - Java 17.
 
-Before building, confirm:
+Before building, confirm in PowerShell:
 
 ```powershell
 java -version
-echo %JAVA_HOME%
-echo %ANDROID_HOME%
-echo %ANDROID_SDK_ROOT%
-```
-
-In PowerShell:
-
-```powershell
 $env:JAVA_HOME
 $env:ANDROID_HOME
 $env:ANDROID_SDK_ROOT
+```
+
+CMD-compatible environment checks:
+
+```cmd
+echo %JAVA_HOME%
+echo %ANDROID_HOME%
+echo %ANDROID_SDK_ROOT%
 ```
 
 Install or configure:

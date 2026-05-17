@@ -203,22 +203,22 @@ android/VitaMRCompanion/
 
 ## Prerequisite Checks
 
-Run these checks before building:
+Run these checks before building in PowerShell:
 
 ```powershell
 dotnet --info
 java -version
-echo %JAVA_HOME%
-echo %ANDROID_HOME%
-echo %ANDROID_SDK_ROOT%
-```
-
-In PowerShell, these environment values can also be checked with:
-
-```powershell
 $env:JAVA_HOME
 $env:ANDROID_HOME
 $env:ANDROID_SDK_ROOT
+```
+
+CMD-compatible environment checks:
+
+```cmd
+echo %JAVA_HOME%
+echo %ANDROID_HOME%
+echo %ANDROID_SDK_ROOT%
 ```
 
 Expected:
