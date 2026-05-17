@@ -57,6 +57,8 @@ Install or configure:
 - `JAVA_HOME`.
 - `ANDROID_HOME` or `ANDROID_SDK_ROOT`.
 
+If Android tooling is missing, agents should stop and report the missing component. Install Android Studio, JDK 17, or Android SDK components only with explicit user approval.
+
 ## Build
 
 From this folder:

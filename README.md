@@ -274,6 +274,8 @@ If Android tooling is missing:
 7. Set `ANDROID_HOME` or `ANDROID_SDK_ROOT` to the Android SDK folder.
 8. Open a new terminal and rerun the prerequisite checks.
 
+If Android tooling is missing, agents should stop and report the missing component. Install Android Studio, JDK 17, or Android SDK components only with explicit user approval.
+
 Physical phone testing uses the desktop PC LAN IP, not `127.0.0.1`. Example:
 
 ```text
