@@ -58,6 +58,10 @@ No blocker was found in the current tracked file tree during the Day 17 safety p
 
 - Desktop WPF build passed for `VitaMR.csproj` with 0 warnings and 0 errors.
 - Android companion `assembleDebug` passed after setting `ANDROID_HOME` to the local Android SDK path for this machine.
+- Laptop README test found the public repo downloadable from `master`, classified it as `safe to build with synthetic data`, and confirmed blank Bruce plus expected project shape.
+- Laptop desktop build passed with `dotnet build VitaMR.csproj --configuration Debug`.
+- Laptop Android build did not run because Java/Android SDK tooling was missing; README and Android README now document JDK 17, Android SDK 35, `JAVA_HOME`, `ANDROID_HOME`, and `ANDROID_SDK_ROOT` setup.
+- Laptop desktop build initially hit a user NuGet config permission issue; README now documents the symptom and a workspace-local `APPDATA`/`LOCALAPPDATA` workaround.
 - The app was not launched.
 - No provider keys were added.
 - No real chart data or medical records were used.

@@ -20,7 +20,60 @@ The Android app uses the phone's operating-system biometric prompt. That can be 
 
 VitaMR does **not** store face images, face templates, or biometric identifiers. The phone only tells the app whether Android authentication succeeded.
 
-## Desktop requirements
+## Build Prerequisites
+
+The Android companion uses:
+
+- Kotlin / Jetpack Compose.
+- `compileSdk 35`.
+- `targetSdk 35`.
+- `minSdk 26` / Android 8.0+.
+- Java 17.
+
+Before building, confirm:
+
+```powershell
+java -version
+echo %JAVA_HOME%
+echo %ANDROID_HOME%
+echo %ANDROID_SDK_ROOT%
+```
+
+In PowerShell:
+
+```powershell
+$env:JAVA_HOME
+$env:ANDROID_HOME
+$env:ANDROID_SDK_ROOT
+```
+
+Install or configure:
+
+- Android Studio or Android command-line tools.
+- JDK 17.
+- Android SDK Platform 35.
+- Android SDK Build-Tools.
+- Android SDK Platform-Tools.
+- `JAVA_HOME`.
+- `ANDROID_HOME` or `ANDROID_SDK_ROOT`.
+
+## Build
+
+From this folder:
+
+```powershell
+.\gradlew.bat assembleDebug
+```
+
+If Java is missing, Gradle may fail with:
+
+```text
+ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+```
+
+Install JDK 17, set `JAVA_HOME`, open a new terminal, and retry.
+
+## Runtime Desktop Requirements
 
 Open VitaMR desktop first. It should report:
 
@@ -32,7 +85,9 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 
 All should return `ready` while VitaMR is open.
 
-## Android Studio
+These runtime checks are for phone testing after inspection/build. They are not required for a source-only safety inspection.
+
+## Android Studio Run
 
 Open this folder in Android Studio:
 
@@ -45,5 +100,7 @@ Build and run the `app` configuration. For a physical phone, set the desktop URL
 ```text
 http://<desktop-ip>:5057
 ```
+
+Do not use `127.0.0.1` from a physical phone. On a phone, `127.0.0.1` points back to the phone, not the desktop PC.
 
 The app currently allows cleartext HTTP because v1 is LAN-only. Before any remote use, add HTTPS or an encrypted local tunnel.

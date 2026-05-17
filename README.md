@@ -124,6 +124,19 @@ Expected baseline:
 - Java runtime compatible with the Gradle wrapper
 - Optional local model/OCR/privacy dependencies only after inspection
 
+## Get The Source
+
+The current public branch is `master`.
+
+Preferred clone command:
+
+```powershell
+git clone https://github.com/DreDolly/VitaMR-public.git
+cd VitaMR-public
+```
+
+If downloading a ZIP from GitHub, use the branch shown by GitHub's **Code** button. Do not assume a `main.zip` URL unless the default branch is changed to `main`.
+
 ## Supported Platforms And Recommended Specs
 
 Current official build target:
@@ -188,14 +201,145 @@ Android project:
 android/VitaMRCompanion/
 ```
 
+## Prerequisite Checks
+
+Run these checks before building:
+
+```powershell
+dotnet --info
+java -version
+echo %JAVA_HOME%
+echo %ANDROID_HOME%
+echo %ANDROID_SDK_ROOT%
+```
+
+In PowerShell, these environment values can also be checked with:
+
+```powershell
+$env:JAVA_HOME
+$env:ANDROID_HOME
+$env:ANDROID_SDK_ROOT
+```
+
+Expected:
+
+- `.NET` SDK can build `net10.0-windows`.
+- `java -version` reports Java 17 for Android builds.
+- `JAVA_HOME` points to a JDK 17 install.
+- `ANDROID_HOME` or `ANDROID_SDK_ROOT` points to the Android SDK.
+- Android SDK includes Platform 35, Build-Tools, and Platform-Tools.
+
 ## Rebuild Plan
 
 1. Inspect the repo and docs.
 2. Confirm no real PHI, screenshots, API keys, or private logs are present.
 3. Build the WPF desktop app.
-4. Build the Android companion app.
+4. Build the Android companion app if Java/Android SDK tooling is installed.
 5. Start with a blank synthetic Bruce Wayne patient and add only fake test data.
 6. Confirm local server, file, and network behavior before adding any private data.
+
+Desktop build command:
+
+```powershell
+dotnet build VitaMR.csproj --configuration Debug
+```
+
+Android build commands:
+
+```powershell
+cd android/VitaMRCompanion
+.\gradlew.bat assembleDebug
+```
+
+Do not run the app until after inspection and synthetic build testing are complete.
+
+## Android Tooling Setup
+
+The Android companion uses:
+
+- Kotlin / Jetpack Compose.
+- `compileSdk 35`.
+- `targetSdk 35`.
+- `minSdk 26` / Android 8.0+.
+- Java 17.
+
+If Android tooling is missing:
+
+1. Install Android Studio, or install Android command-line tools.
+2. Install JDK 17.
+3. Install Android SDK Platform 35.
+4. Install Android SDK Build-Tools.
+5. Install Android SDK Platform-Tools.
+6. Set `JAVA_HOME` to the JDK 17 folder.
+7. Set `ANDROID_HOME` or `ANDROID_SDK_ROOT` to the Android SDK folder.
+8. Open a new terminal and rerun the prerequisite checks.
+
+Physical phone testing uses the desktop PC LAN IP, not `127.0.0.1`. Example:
+
+```text
+http://192.168.1.100:5057
+```
+
+Replace the example address with the actual desktop PC LAN address.
+
+## Troubleshooting
+
+### NuGet.Config Permission Error
+
+Symptom:
+
+```text
+Access to the path 'C:\Users\<user>\AppData\Roaming\NuGet\NuGet.Config' is denied.
+```
+
+Likely cause:
+
+- The .NET SDK is trying to read a user-level NuGet config that the current terminal, agent, or sandbox cannot access.
+
+Safe fixes:
+
+1. Run the build from a normal user terminal that has access to the user's NuGet config.
+2. Repair file permissions on the user NuGet config if they are wrong.
+3. Use a workspace-local NuGet config for synthetic build testing.
+
+Workspace-local workaround:
+
+```powershell
+mkdir .local-appdata
+mkdir .local-roaming
+mkdir .nuget
+
+$env:LOCALAPPDATA = (Resolve-Path .local-appdata).Path
+$env:APPDATA = (Resolve-Path .local-roaming).Path
+
+@"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+"@ | Set-Content -Path .nuget\NuGet.Config -Encoding UTF8
+
+dotnet build VitaMR.csproj --configuration Debug --configfile .nuget\NuGet.Config
+```
+
+Do not put API keys or private paths in NuGet config files.
+
+### Android Java Not Found
+
+Symptom:
+
+```text
+ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+```
+
+Fix:
+
+- Install JDK 17.
+- Set `JAVA_HOME` to the JDK 17 folder.
+- Open a new terminal.
+- Confirm `java -version` works.
 
 ## Agent Reconstruction Goal
 
