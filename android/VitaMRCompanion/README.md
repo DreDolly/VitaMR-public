@@ -30,6 +30,8 @@ The Android companion uses:
 - `minSdk 26` / Android 8.0+.
 - Java 17.
 
+Do not attempt the Android build until the Android toolchain is installed and configured. If Java, Android SDK, or environment variables are missing, stop before building and report the missing component.
+
 Before building, confirm in PowerShell:
 
 ```powershell
@@ -67,7 +69,7 @@ If Android tooling is missing, agents should stop and report the missing compone
    - Read `docs/GITHUB_READINESS_AUDIT.md`.
    - Read this Android README before Android build work.
 
-2. Check Android prerequisites.
+2. Check Android prerequisites before building.
 
    ```powershell
    java -version
@@ -76,11 +78,12 @@ If Android tooling is missing, agents should stop and report the missing compone
    $env:ANDROID_SDK_ROOT
    ```
 
-3. Stop if local tooling is missing.
+3. Install or configure missing tools before building.
    - If `java -version` fails, JDK 17 is missing or not on `PATH`.
    - If `JAVA_HOME` is blank, set it to the JDK 17 folder after JDK setup.
    - If `ANDROID_HOME` and `ANDROID_SDK_ROOT` are blank, Android SDK tooling is not configured.
    - Missing Java or Android SDK configuration is a local machine setup gap, not a repo defect.
+   - Do not run `.\gradlew.bat assembleDebug` until Java 17 and Android SDK tooling are available.
    - Do not install Android Studio, JDK 17, or Android SDK components without explicit user approval.
 
 4. User role.
@@ -94,6 +97,7 @@ If Android tooling is missing, agents should stop and report the missing compone
 5. Agent role.
    - Inspect docs first.
    - Report missing tooling instead of silently installing it.
+   - Ask for explicit user approval before installing JDK 17, Android Studio, Android SDK components, or changing environment variables.
    - Build Android only after tooling exists or the user explicitly approves setup.
    - Do not run the app, add keys, connect services, or use real data unless explicitly approved.
 

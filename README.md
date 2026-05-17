@@ -203,6 +203,8 @@ android/VitaMRCompanion/
 
 ## Prerequisite Checks
 
+Do not attempt a build until the required toolchain for that build path is installed and the checks below pass. For a full Windows desktop + Android companion test, install and configure all required desktop and Android tooling first.
+
 Run these checks before building in PowerShell:
 
 ```powershell
@@ -224,10 +226,13 @@ echo %ANDROID_SDK_ROOT%
 Expected:
 
 - `.NET` SDK can build `net10.0-windows`.
+- `Microsoft.WindowsDesktop.App` is present for the WPF desktop build.
 - `java -version` reports Java 17 for Android builds.
 - `JAVA_HOME` points to a JDK 17 install.
 - `ANDROID_HOME` or `ANDROID_SDK_ROOT` points to the Android SDK.
 - Android SDK includes Platform 35, Build-Tools, and Platform-Tools.
+
+If any required tool is missing, stop before building. Codex, Claude, or any other coding agent may help install or configure missing tooling only after the user explicitly approves the machine-level change.
 
 ## Setup Order For Cautious Builders
 
@@ -247,7 +252,13 @@ Expected:
    $env:ANDROID_SDK_ROOT
    ```
 
-3. Desktop path.
+3. Install or configure missing tools before building.
+   - For desktop-only testing, the required tools are `.NET SDK` and `Microsoft.WindowsDesktop.App` for WPF.
+   - For Android testing, the required tools are JDK 17, Android Studio or Android command-line tools, Android SDK Platform 35, Build-Tools, Platform-Tools, `JAVA_HOME`, and `ANDROID_HOME` or `ANDROID_SDK_ROOT`.
+   - If these are missing, do not try the build yet.
+   - Agents must clearly tell the user what is missing and ask permission before installing or changing machine-level configuration.
+
+4. Desktop path.
    - The Windows desktop app needs .NET/WPF tooling.
    - If `.NET SDK` and `Microsoft.WindowsDesktop.App` are present, build:
 
@@ -258,7 +269,7 @@ Expected:
    - If the user-level NuGet config permission issue appears, use the documented workspace-local workaround below.
    - Desktop can be built without Android tooling.
 
-4. Android path.
+5. Android path.
    - The Android companion cannot build until Android tooling is installed and configured.
    - Required tooling:
      - JDK 17.
@@ -272,8 +283,9 @@ Expected:
    - If `java -version` fails or the Android environment variables are blank, stop and report the missing tooling.
    - Do not install Android Studio, JDK 17, or Android SDK components without explicit user approval.
 
-5. User role.
+6. User role.
    - Approve or perform machine-level setup.
+   - Install .NET SDK / Windows Desktop workload if desktop tooling is missing.
    - Install JDK 17.
    - Install Android Studio or Android command-line tools.
    - Install SDK Platform 35, Build-Tools, and Platform-Tools.
@@ -281,17 +293,19 @@ Expected:
    - Set environment variables.
    - Decide whether to run the app after build.
 
-6. Agent role.
+7. Agent role.
    - Inspect docs first.
    - Classify safety before build.
    - Run prerequisite checks.
+   - Do not try to build a path until that path's required tools are installed and configured.
+   - Clearly report missing tools and ask for approval before installing .NET, Android Studio, JDK 17, Android SDK components, or changing environment variables.
    - Build desktop if safe.
    - Use the NuGet workaround if needed.
    - Stop and report missing Android tooling.
    - Build Android only after tooling exists or the user explicitly approves setup.
    - Do not run the app, add keys, connect services, or use real data unless explicitly approved.
 
-7. Android build after setup.
+8. Android build after setup.
 
    ```powershell
    java -version
