@@ -1,0 +1,330 @@
+<UserControl x:Class="VitaMR.Controls.VitaMasteryControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Background="#FBFDFF">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Margin="26,22,26,28">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0" Margin="0,0,0,18">
+                    <Button DockPanel.Dock="Right"
+                            Content="Back to chat"
+                            Width="110"
+                            Height="32"
+                            Command="{Binding ShowConversationCommand}" />
+                    <StackPanel>
+                        <TextBlock Text="Vita Mastery"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}" />
+                        <TextBlock Text="{Binding VitaMasteryCompletionSummary}"
+                                   FontSize="13"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </DockPanel>
+
+                <Border Grid.Row="1"
+                        Background="#EDF3F7"
+                        BorderBrush="#D8E5EC"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="18"
+                        Margin="0,0,0,18">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   Text="{Binding VitaMasterySummary}"
+                                   FontSize="20"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}" />
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="1"
+                                   Text="{Binding VitaMasteryPointsSummary}"
+                                   FontSize="15"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   VerticalAlignment="Center" />
+                        <ProgressBar Grid.Row="1"
+                                     Grid.ColumnSpan="2"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Height="16"
+                                     Value="{Binding VitaMasteryPercent, Mode=OneWay}"
+                                     Margin="0,14,0,0"
+                                     Foreground="#0ECAA9"
+                                     Background="#DCE5EA" />
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="2" Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Background="White"
+                            BorderBrush="#E4EAF1"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16"
+                            Margin="0,0,12,0">
+                        <StackPanel>
+                            <TextBlock Text="1. Basic"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Text="Core data: identity, meds, allergies, vaccines, visits, vitals."
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       Margin="0,5,0,10" />
+                            <ProgressBar Minimum="0"
+                                         Maximum="100"
+                                         Height="9"
+                                         Value="{Binding VitaMasteryFoundationStepValue, Mode=OneWay}"
+                                         Foreground="#0ECAA9"
+                                         Background="#E7EEF2" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="1"
+                            Background="White"
+                            BorderBrush="#E4EAF1"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16"
+                            Margin="0,0,12,0">
+                        <StackPanel>
+                            <TextBlock Text="2. Master"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Text="Age-appropriate screenings and routine preventive records."
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       Margin="0,5,0,10" />
+                            <ProgressBar Minimum="0"
+                                         Maximum="100"
+                                         Height="9"
+                                         Value="{Binding VitaMasteryPreventiveStepValue, Mode=OneWay}"
+                                         Foreground="#0ECAA9"
+                                         Background="#E7EEF2" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2"
+                            Background="White"
+                            BorderBrush="#E4EAF1"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <StackPanel>
+                            <TextBlock Text="3. Legendary"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Text="Risk-based records, monitoring data, imaging, and deeper health signals."
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       Margin="0,5,0,10" />
+                            <ProgressBar Minimum="0"
+                                         Maximum="100"
+                                         Height="9"
+                                         Value="{Binding VitaMasteryDeepSignalStepValue, Mode=OneWay}"
+                                         Foreground="#0ECAA9"
+                                         Background="#E7EEF2" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Border Grid.Row="3"
+                        Background="White"
+                        BorderBrush="#D8E5EC"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16"
+                        Margin="0,0,0,18">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.1*" />
+                            <ColumnDefinition Width="2*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0"
+                                    Margin="0,0,18,0">
+                            <TextBlock Text="Data Hunter Debug"
+                                       FontSize="17"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Text="{Binding DataHunterDebugSummary}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,5,0,12" />
+                            <TextBlock Text="{Binding DataHunterFirstMasterTargetSummary}"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Foreground="#087A66"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding DataHunterFirstMasterTargetDetail}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0" />
+                            <TextBlock Text="{Binding DataHunterMasterEvidenceSummary}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="#087A66"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,0" />
+                            <Border Background="#F8FBFC"
+                                    BorderBrush="#E5EDF2"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="12"
+                                    Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="How XP works"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}" />
+                                    <TextBlock Text="Basic answer XP is user-provided context. Category bonuses reward a completed Basic area. Master Hunt XP starts only when a source is accepted into the vault. Later, not sure, and does not apply are tracked without inflating evidence progress."
+                                               FontSize="12"
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,5,0,0" />
+                                    <TextBlock Text="User memory provides context. Accepted records provide evidence. The source remains sacred."
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="#087A66"
+                                               TextWrapping="Wrap"
+                                               Margin="0,7,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <ItemsControl Grid.Column="1"
+                                      ItemsSource="{Binding DataHunterDebugRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#F8FBFC"
+                                            BorderBrush="#E5EDF2"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="10"
+                                            Margin="0,0,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding Label}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       TextWrapping="Wrap" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="{Binding Value}"
+                                                           Foreground="{StaticResource TextBrush}"
+                                                           TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Detail}"
+                                                           Foreground="{StaticResource MutedTextBrush}"
+                                                           FontSize="12"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,3,0,0" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.1*" />
+                        <ColumnDefinition Width="2*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Background="White"
+                            BorderBrush="#E4EAF1"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16"
+                            Margin="0,0,14,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top"
+                                       Text="Active Micro-Quests"
+                                       FontSize="17"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}"
+                                       Margin="0,0,0,12" />
+                            <ItemsControl ItemsSource="{Binding VitaMasteryActiveQuestRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#F8FBFC"
+                                                BorderBrush="#E5EDF2"
+                                                BorderThickness="1"
+                                                CornerRadius="8"
+                                                Padding="12"
+                                                Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextBrush}"
+                                                           TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding EvidenceHint}"
+                                                           Foreground="{StaticResource MutedTextBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,5,0,0" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </DockPanel>
+                    </Border>
+
+                    <TabControl Grid.Column="1">
+                        <TabItem Header="Basic">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding VitaMasteryFoundationQuestRows}"
+                                              ItemTemplate="{StaticResource VitaMasteryQuestRowTemplate}" />
+                            </ScrollViewer>
+                        </TabItem>
+                        <TabItem Header="Master">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding VitaMasteryPreventiveQuestRows}"
+                                              ItemTemplate="{StaticResource VitaMasteryQuestRowTemplate}" />
+                            </ScrollViewer>
+                        </TabItem>
+                        <TabItem Header="Legendary">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding VitaMasteryDeepSignalQuestRows}"
+                                              ItemTemplate="{StaticResource VitaMasteryQuestRowTemplate}" />
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Grid>
+        </ScrollViewer>
+    </Border>
+</UserControl>

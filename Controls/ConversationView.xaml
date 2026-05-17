@@ -1,0 +1,12 @@
+<UserControl x:Class="VitaMR.Controls.ConversationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer x:Name="ConversationScrollViewer"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  Background="Transparent">
+        <ItemsControl ItemsSource="{Binding Messages}"
+                      ItemTemplate="{StaticResource MessageTemplate}"
+                      Margin="70,34,70,170" />
+    </ScrollViewer>
+</UserControl>

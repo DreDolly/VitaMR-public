@@ -1,0 +1,266 @@
+<UserControl x:Class="VitaMR.Controls.TopStatusBarControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="ModeSegmentRadioStyle" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="SegmentRoot"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="7"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="SegmentRoot" Property="Background" Value="#A7F2EA" />
+                                <Setter TargetName="SegmentRoot" Property="BorderBrush" Value="#7ADFD6" />
+                                <Setter Property="Foreground" Value="#111827" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TopBarComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="24" />
+            <RowDefinition Height="112" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{StaticResource RailBrush}"
+                BorderBrush="{StaticResource RailBorderBrush}"
+                BorderThickness="0,0,0,1" />
+
+        <Border Grid.Row="1"
+                Background="#F9FBFD"
+                BorderBrush="{StaticResource LineBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="26,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Grid Width="92"
+                          Height="92"
+                          Margin="0,0,18,0"
+                          ToolTip="{Binding ActiveChartPath}">
+                        <Ellipse Stroke="#8FDEEB"
+                                 StrokeThickness="4"
+                                 Visibility="{Binding PatientPhotoVisibility}">
+                            <Ellipse.Fill>
+                                <ImageBrush ImageSource="{Binding ActivePatientPhotoImage}"
+                                            Stretch="UniformToFill" />
+                            </Ellipse.Fill>
+                        </Ellipse>
+                        <Border Background="#EAF3F8"
+                                BorderBrush="#8FDEEB"
+                                BorderThickness="4"
+                                CornerRadius="46"
+                                Visibility="{Binding PatientInitialsVisibility}">
+                            <TextBlock Text="{Binding ActivePatientInitials}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="28"
+                                       FontWeight="Bold"
+                                       Foreground="#075985" />
+                        </Border>
+                    </Grid>
+
+                    <Button Command="{Binding StartDataHunterCommand}"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="0"
+                            HorizontalContentAlignment="Stretch">
+                        <Border Width="720"
+                                Height="100"
+                                Background="#FFFFFF"
+                                BorderBrush="#D8E5EC"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12,9"
+                                Margin="0,0,18,0">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#5B7180"
+                                                  BlurRadius="16"
+                                                  ShadowDepth="3"
+                                                  Direction="315"
+                                                  Opacity="0.20" />
+                            </Border.Effect>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="210" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0"
+                                                Orientation="Horizontal"
+                                                VerticalAlignment="Center">
+                                        <Border Width="30"
+                                                Height="30"
+                                                Background="#E6FAF4"
+                                                CornerRadius="15"
+                                                Margin="0,0,9,0">
+                                            <TextBlock Text="+"
+                                                       Foreground="#087A66"
+                                                       FontSize="15"
+                                                       FontWeight="Bold"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="{Binding DataHunterProgressSummary}"
+                                                   FontSize="14"
+                                                   FontWeight="Bold"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding DataHunterPointsSummary}"
+                                                   FontSize="12"
+                                                   Foreground="{StaticResource MutedTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="16,0,0,0" />
+                                    </StackPanel>
+
+                                    <Border Grid.Column="1"
+                                            Background="#F6FAFC"
+                                            BorderBrush="#D6E4EF"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="3"
+                                            ToolTip="{Binding HealthspanModeDetail}">
+                                        <Grid>
+                                            <UniformGrid Columns="2">
+                                                <RadioButton Content="Records"
+                                                             GroupName="HealthspanMode"
+                                                             Command="{Binding UseRecordsModeCommand}"
+                                                             IsChecked="{Binding IsRecordsModeSelected, Mode=OneWay}"
+                                                             Style="{StaticResource ModeSegmentRadioStyle}"
+                                                             Padding="8,5"
+                                                             FontSize="12"
+                                                             FontWeight="SemiBold" />
+                                                <RadioButton Content="Healthspan"
+                                                             GroupName="HealthspanMode"
+                                                             Command="{Binding UseHealthspanModeCommand}"
+                                                             IsChecked="{Binding IsHealthspanModeSelected, Mode=OneWay}"
+                                                             Style="{StaticResource ModeSegmentRadioStyle}"
+                                                             Padding="8,5"
+                                                             FontSize="12"
+                                                             FontWeight="SemiBold" />
+                                            </UniformGrid>
+                                            <Border Width="24"
+                                                    Height="24"
+                                                    Background="#FFFFFF"
+                                                    CornerRadius="12"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,-6,-6,0"
+                                                    Visibility="{Binding HealthspanIntensityVisibility}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect Color="#8EA4B5"
+                                                                      BlurRadius="6"
+                                                                      ShadowDepth="1"
+                                                                      Opacity="0.20" />
+                                                </Border.Effect>
+                                                <TextBlock Text="★"
+                                                           Foreground="{Binding HealthspanStarBrush}"
+                                                           FontSize="18"
+                                                           FontWeight="Bold"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <ProgressBar Grid.Row="1"
+                                             Minimum="0"
+                                             Maximum="100"
+                                             Height="7"
+                                             Value="{Binding DataHunterBasicPercent, Mode=OneWay}"
+                                             Margin="0,9,0,7"
+                                             Foreground="#0ECAA9"
+                                             Background="#DCE5EA" />
+
+                                <TextBlock Grid.Row="2"
+                                           Text="{Binding DataHunterNextQuestion}"
+                                           FontSize="12"
+                                           Foreground="{StaticResource MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           TextTrimming="CharacterEllipsis"
+                                           LineHeight="16"
+                                           MaxHeight="34"
+                                           ToolTip="{Binding DataHunterNextQuestion}" />
+                            </Grid>
+                        </Border>
+                    </Button>
+                </StackPanel>
+
+                <Border Grid.Column="1"
+                        Background="#FFFFFF"
+                        BorderBrush="#D6E4EF"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="10,8"
+                        VerticalAlignment="Center">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#8EA4B5"
+                                          BlurRadius="12"
+                                          ShadowDepth="2"
+                                          Opacity="0.14" />
+                    </Border.Effect>
+                    <StackPanel>
+                        <DockPanel Margin="1,0,0,4">
+                            <TextBlock Text="{Binding RiskSummary}"
+                                       DockPanel.Dock="Right"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="#087A66"
+                                       Margin="12,0,0,0" />
+                            <TextBlock Text="Agent"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource MutedTextBrush}" />
+                        </DockPanel>
+                        <ComboBox Width="160"
+                                  Height="28"
+                                  ItemsSource="{Binding Models}"
+                                  SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
+                                  Style="{StaticResource TopBarComboBoxStyle}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

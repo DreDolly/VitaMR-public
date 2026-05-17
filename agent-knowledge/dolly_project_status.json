@@ -1,0 +1,21 @@
+{
+  "id": "dolly_project_status",
+  "version": "0.1.0",
+  "last_updated": "2026-05-16",
+  "status": {
+    "desktop_wpf": "active_prototype_chart_authority",
+    "android_companion": "active_prototype_phone_front_end_cache",
+    "data_hunter_basic": "active_prototype",
+    "master_hunt": "emerging_prototype",
+    "healthspan_mode": "early_opt_in_ui_direction",
+    "emr_access": "out_of_scope_for_pilot",
+    "public_release": "private_staging_for_laptop_vetting"
+  },
+  "known_limitations": [
+    "Not a medical advice tool.",
+    "Synthetic rebuild path requires verification.",
+    "Runtime loading of Agent Knowledge Pack is not implemented yet.",
+    "Public documentation requires legal/security review before public release."
+  ]
+}
+

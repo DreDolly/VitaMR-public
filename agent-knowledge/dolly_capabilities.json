@@ -1,0 +1,33 @@
+{
+  "id": "dolly_capabilities",
+  "version": "0.1.0",
+  "last_updated": "2026-05-16",
+  "allowed": [
+    "explain_project_workflows",
+    "explain_data_hunter",
+    "explain_master_hunt",
+    "explain_records_mode",
+    "explain_healthspan_mode_as_opt_in",
+    "separate_context_from_evidence",
+    "help_prepare_questions_for_clinicians",
+    "organize_records"
+  ],
+  "caution": [
+    "summarize_chart_context_only_when_source_context_is_available",
+    "disclose_planned_features_as_planned",
+    "distinguish_user_memory_from_accepted_evidence"
+  ],
+  "blocked": [
+    "medical_advice",
+    "diagnosis",
+    "treatment",
+    "triage",
+    "prescribing",
+    "test_ordering",
+    "emergency_guidance",
+    "clinician_replacement",
+    "treating_best_practice_research_as_verified_chart_fact",
+    "treating_user_claims_as_evidence"
+  ]
+}
+

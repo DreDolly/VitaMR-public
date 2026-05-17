@@ -1,0 +1,324 @@
+<UserControl x:Class="VitaMR.Controls.AdminDashboardControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Background="#FBFDFF">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Margin="26,22,26,28">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0" Margin="0,0,0,18">
+                    <Button DockPanel.Dock="Right"
+                            Content="Refresh"
+                            Width="86"
+                            Height="32"
+                            Command="{Binding RefreshAdminDashboardCommand}" />
+                    <Button DockPanel.Dock="Right"
+                            Content="Evaluation"
+                            Width="96"
+                            Height="32"
+                            Margin="0,0,10,0"
+                            Command="{Binding ToggleEvaluationToolCommand}" />
+                    <StackPanel>
+                        <TextBlock Text="Admin"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}" />
+                        <TextBlock Text="Chart Manager authority, patient roster, and protected actions"
+                                   FontSize="13"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </DockPanel>
+
+                <Grid Grid.Row="1" Margin="0,0,0,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Background="White"
+                            BorderBrush="#E4EAF1"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16"
+                            Margin="0,0,12,0">
+                        <StackPanel>
+                            <TextBlock Text="Chart Manager"
+                                       FontSize="12"
+                                       Foreground="{StaticResource MutedTextBrush}" />
+                            <TextBlock Text="{Binding AdminManagerDisplayName}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}"
+                                       Margin="0,6,0,2" />
+                            <TextBlock Text="{Binding AdminManagerNickname}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Text="{Binding AdminPersonaPath}"
+                                       TextWrapping="Wrap"
+                                       FontSize="12"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       Margin="0,10,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="1"
+                            Background="White"
+                            BorderBrush="#E4EAF1"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16"
+                            Margin="0,0,12,0">
+                        <StackPanel>
+                            <TextBlock Text="Runtime"
+                                       FontSize="12"
+                                       Foreground="{StaticResource MutedTextBrush}" />
+                            <TextBlock Text="{Binding AdminActiveUserDisplay}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}"
+                                       Margin="0,6,0,2" />
+                            <TextBlock Text="{Binding AdminAgentDisplay}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Text="{Binding AdminSetupStatus}"
+                                       TextWrapping="Wrap"
+                                       FontSize="12"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       Margin="0,10,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2"
+                            Background="White"
+                            BorderBrush="#E4EAF1"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <StackPanel>
+                            <TextBlock Text="Active Chart"
+                                       FontSize="12"
+                                       Foreground="{StaticResource MutedTextBrush}" />
+                            <TextBlock Text="{Binding AdminActiveChartDisplay}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}"
+                                       Margin="0,6,0,2" />
+                            <TextBlock Text="{Binding AdminAccessNotes}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextBrush}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Border Grid.Row="2"
+                        Background="White"
+                        BorderBrush="#E4EAF1"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16"
+                        Margin="0,0,0,16"
+                        Visibility="{Binding IsEvaluationToolOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="Builder Evaluation"
+                                       FontSize="17"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding EvaluationSavedStatus}"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       FontSize="12"
+                                       VerticalAlignment="Center" />
+                        </DockPanel>
+
+                        <TextBlock Text="Full human evaluation waits until VitaMR has a completed version and at least one week of real chart use."
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox Grid.Column="0"
+                                      ItemsSource="{Binding EvaluationScenarios}"
+                                      SelectedItem="{Binding SelectedEvaluationScenario, Mode=TwoWay}"
+                                      Height="30"
+                                      Margin="0,0,12,0" />
+                            <TextBox Grid.Column="1"
+                                     Text="{Binding EvaluationNotes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="30"
+                                     Padding="7,4"
+                                     TextWrapping="NoWrap" />
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding EvaluationQuestions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="90" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Prompt}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   VerticalAlignment="Center" />
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding AnswerOptions}"
+                                                  SelectedItem="{Binding Answer, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  Height="30"
+                                                  Margin="10,0,0,0" />
+                                        <TextBox Grid.Column="2"
+                                                 Text="{Binding ScoreText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 Height="30"
+                                                 Margin="10,0,0,0"
+                                                 Padding="7,4" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Button Content="Save evaluation"
+                                Width="130"
+                                Height="32"
+                                HorizontalAlignment="Right"
+                                Command="{Binding SaveEvaluationResultCommand}" />
+                    </StackPanel>
+                </Border>
+
+                <Grid Grid.Row="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Background="White"
+                            BorderBrush="#E4EAF1"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16"
+                            Margin="0,0,14,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top"
+                                       Text="Patient Charts"
+                                       FontSize="17"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}"
+                                       Margin="0,0,0,12" />
+                            <ItemsControl ItemsSource="{Binding AdminChartRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#EDF1F5"
+                                                BorderThickness="0,0,0,1"
+                                                Padding="0,10">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="130" />
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="88" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding PatientDisplayName}"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TextBrush}" />
+                                                    <TextBlock Text="{Binding ChartId}"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource MutedTextBrush}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding DateOfBirth}"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TextBrush}" />
+                                                <TextBlock Grid.Column="2"
+                                                           Text="{Binding CleanupHint}"
+                                                           VerticalAlignment="Center"
+                                                           TextWrapping="Wrap"
+                                                           Foreground="{StaticResource MutedTextBrush}" />
+                                                <Button Grid.Column="3"
+                                                        Content="{Binding FocusButtonLabel}"
+                                                        Height="30"
+                                                        Command="{Binding DataContext.AdminFocusChartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </DockPanel>
+                    </Border>
+
+                    <StackPanel Grid.Column="1">
+                        <Border Background="White"
+                                BorderBrush="#E4EAF1"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="16"
+                                Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Protected Actions"
+                                           FontSize="17"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextBrush}"
+                                           Margin="0,0,0,12" />
+                                <ItemsControl ItemsSource="{Binding AdminProtectedActions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       Margin="0,0,0,10" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="White"
+                                BorderBrush="#E4EAF1"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="16">
+                            <StackPanel>
+                                <TextBlock Text="Manager Tools"
+                                           FontSize="17"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextBrush}"
+                                           Margin="0,0,0,12" />
+                                <TextBlock Text="Skipped setup? Restart or repair it here."
+                                           Foreground="{StaticResource MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,10" />
+                                <Button Content="Run first-run setup"
+                                        Height="32"
+                                        Margin="0,0,0,8"
+                                        Command="{Binding AdminRunSetupCommand}" />
+                                <Button Content="Repair setup"
+                                        Height="32"
+                                        Margin="0,0,0,8"
+                                        Command="{Binding AdminRepairSetupCommand}" />
+                                <Button Content="Review chart cleanup"
+                                        Height="32"
+                                        Command="{Binding AdminReviewCleanupCommand}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </ScrollViewer>
+    </Border>
+</UserControl>

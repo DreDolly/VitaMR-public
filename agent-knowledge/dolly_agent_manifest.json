@@ -1,0 +1,20 @@
+{
+  "id": "dolly_agent_manifest",
+  "version": "0.1.0",
+  "last_updated": "2026-05-16",
+  "purpose": "Index public project knowledge files for Dolly and coding agents.",
+  "loading_order": [
+    "docs/SAFETY_AND_MEDICAL_BOUNDARIES.md",
+    "docs/DOLLY_AGENT_CHARTER.md",
+    "docs/AGENT_KNOWLEDGE_PACK.md",
+    "docs/API_KEY_SETUP.md",
+    "docs/FEATURES_AND_WORKFLOWS.md",
+    "docs/FAQ.md",
+    "agent-knowledge/dolly_answer_policy.json",
+    "agent-knowledge/dolly_capabilities.json",
+    "agent-knowledge/dolly_project_status.json"
+  ],
+  "safety_priority": "medical_boundaries_first",
+  "public_runtime": true,
+  "review_needed": true
+}
