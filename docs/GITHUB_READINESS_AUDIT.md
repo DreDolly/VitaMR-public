@@ -66,6 +66,17 @@ No blocker was found in the current tracked file tree during the Day 17 safety p
 - No provider keys were added.
 - No real chart data or medical records were used.
 
+## Laptop-Style Retest Result
+
+Checkpoint `5ed8805` was retested from the public repo.
+
+- `master` branch download worked.
+- Desktop build passed with the documented workspace-local NuGet workaround.
+- Android build correctly stopped before install because Java/JDK 17 and Android SDK tooling were missing.
+- README and Android README clearly require explicit user approval before installing Android Studio, JDK 17, or Android SDK components.
+- Bruce Wayne sample data remained blank: only `sample-data/bruce-wayne/README.md` and `sample-data/bruce-wayne/synthetic-records/.gitkeep`.
+- No tracked `.env`, database, SQLite, PDF, JPG/JPEG, WebP, HEIC, keystore/JKS, PFX/PEM, `google-services.json`, or `local.properties` files were found by quick scan.
+
 ## Git History Notes
 
 The public staging repo has been recreated as a one-commit public release branch and does not include the original private repo history.
