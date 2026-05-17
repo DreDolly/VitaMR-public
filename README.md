@@ -324,7 +324,7 @@ Android tooling is required before Android build or phone runtime testing. It is
 1. Inspect the repo and docs.
 2. Confirm no real PHI, screenshots, API keys, or private logs are present.
 3. Build the WPF desktop app.
-4. Build the Android companion app if Java/Android SDK tooling is installed.
+4. Build the Android companion app only after Android tooling is installed, configured, and verified.
 5. Start with a blank synthetic Bruce Wayne patient and add only fake test data.
 6. Confirm local server, file, and network behavior before adding any private data.
 
@@ -365,6 +365,83 @@ If Android tooling is missing:
 8. Open a new terminal and rerun the prerequisite checks.
 
 If Android tooling is missing, agents should stop and report the missing component. Install Android Studio, JDK 17, or Android SDK components only with explicit user approval.
+
+## Android Toolchain Installation Approval Gate
+
+Full desktop + Android companion build testing requires Android tooling before the Android build can run.
+
+Required Android tooling:
+
+- JDK 17.
+- Android Studio or Android command-line tools.
+- Android SDK Platform 35.
+- Android SDK Build-Tools.
+- Android SDK Platform-Tools.
+- `JAVA_HOME`.
+- `ANDROID_HOME` or `ANDROID_SDK_ROOT`.
+
+Before attempting Android setup, Codex, Claude, or any other coding agent must ask the user for explicit approval.
+
+Suggested agent prompt:
+
+```text
+Android build tooling is missing or incomplete.
+
+To build the VitaMR Android companion, I need your approval to install/configure:
+- JDK 17
+- Android command-line tools or Android Studio
+- Android SDK Platform 35
+- Android SDK Build-Tools
+- Android SDK Platform-Tools
+- JAVA_HOME
+- ANDROID_HOME or ANDROID_SDK_ROOT
+
+This will download developer tools, use disk space, and may require accepting Android SDK licenses.
+
+Do you approve installing/configuring the Android build toolchain on this machine?
+```
+
+If the user approves, the agent may proceed with the safest available setup path.
+
+Preferred agent setup path:
+
+1. Prefer Android command-line tools for automated setup.
+2. Use Android Studio if the user prefers a GUI install.
+3. Install JDK 17.
+4. Install Android SDK command-line tools.
+5. Install:
+   - `platforms;android-35`
+   - `build-tools;<latest compatible 35.x>`
+   - `platform-tools`
+6. Accept Android SDK licenses only after user approval.
+7. Set:
+   - `JAVA_HOME`
+   - `ANDROID_HOME`
+   - `ANDROID_SDK_ROOT`
+8. Open a new shell/session or refresh environment.
+9. Verify:
+
+   ```powershell
+   java -version
+   $env:JAVA_HOME
+   $env:ANDROID_HOME
+   $env:ANDROID_SDK_ROOT
+   ```
+
+10. Build:
+
+    ```powershell
+    cd android/VitaMRCompanion
+    .\gradlew.bat assembleDebug
+    ```
+
+If the user does not approve:
+
+- Do not install anything.
+- Report that the desktop build can proceed if .NET/WPF tooling is available.
+- Report that Android build is blocked until the user installs/configures the Android toolchain.
+
+Missing Java or Android SDK is a local setup gap, not a repo defect. Desktop-only build does not require Android tooling. Full project build verification does require Android tooling. Do not add API keys, use real medical records, connect external services, or run the app unless the user explicitly asks.
 
 Physical phone testing uses the desktop PC LAN IP, not `127.0.0.1`. Example:
 
