@@ -59,6 +59,57 @@ Install or configure:
 
 If Android tooling is missing, agents should stop and report the missing component. Install Android Studio, JDK 17, or Android SDK components only with explicit user approval.
 
+## Setup Order
+
+1. Inspect first.
+   - Read the root `README.md`.
+   - Read `docs/GITHUB_SAFETY_REVIEW_CHECKLIST.md`.
+   - Read `docs/GITHUB_READINESS_AUDIT.md`.
+   - Read this Android README before Android build work.
+
+2. Check Android prerequisites.
+
+   ```powershell
+   java -version
+   $env:JAVA_HOME
+   $env:ANDROID_HOME
+   $env:ANDROID_SDK_ROOT
+   ```
+
+3. Stop if local tooling is missing.
+   - If `java -version` fails, JDK 17 is missing or not on `PATH`.
+   - If `JAVA_HOME` is blank, set it to the JDK 17 folder after JDK setup.
+   - If `ANDROID_HOME` and `ANDROID_SDK_ROOT` are blank, Android SDK tooling is not configured.
+   - Missing Java or Android SDK configuration is a local machine setup gap, not a repo defect.
+   - Do not install Android Studio, JDK 17, or Android SDK components without explicit user approval.
+
+4. User role.
+   - Approve or perform Android tooling setup.
+   - Install JDK 17.
+   - Install Android Studio or Android command-line tools.
+   - Install Android SDK Platform 35, Build-Tools, and Platform-Tools.
+   - Accept Android SDK licenses.
+   - Set `JAVA_HOME` and `ANDROID_HOME` or `ANDROID_SDK_ROOT`.
+
+5. Agent role.
+   - Inspect docs first.
+   - Report missing tooling instead of silently installing it.
+   - Build Android only after tooling exists or the user explicitly approves setup.
+   - Do not run the app, add keys, connect services, or use real data unless explicitly approved.
+
+6. Build after setup.
+
+   ```powershell
+   java -version
+   $env:JAVA_HOME
+   $env:ANDROID_HOME
+   $env:ANDROID_SDK_ROOT
+
+   .\gradlew.bat assembleDebug
+   ```
+
+Physical phone testing happens after build and uses the desktop PC LAN IP, not `127.0.0.1`.
+
 ## Build
 
 From this folder:

@@ -229,6 +229,82 @@ Expected:
 - `ANDROID_HOME` or `ANDROID_SDK_ROOT` points to the Android SDK.
 - Android SDK includes Platform 35, Build-Tools, and Platform-Tools.
 
+## Setup Order For Cautious Builders
+
+1. Inspect first.
+   - Read `README.md`.
+   - Read `docs/GITHUB_SAFETY_REVIEW_CHECKLIST.md`.
+   - Read `docs/GITHUB_READINESS_AUDIT.md`.
+   - Read `android/VitaMRCompanion/README.md` before Android build work.
+
+2. Check prerequisites.
+
+   ```powershell
+   dotnet --info
+   java -version
+   $env:JAVA_HOME
+   $env:ANDROID_HOME
+   $env:ANDROID_SDK_ROOT
+   ```
+
+3. Desktop path.
+   - The Windows desktop app needs .NET/WPF tooling.
+   - If `.NET SDK` and `Microsoft.WindowsDesktop.App` are present, build:
+
+     ```powershell
+     dotnet build VitaMR.csproj --configuration Debug
+     ```
+
+   - If the user-level NuGet config permission issue appears, use the documented workspace-local workaround below.
+   - Desktop can be built without Android tooling.
+
+4. Android path.
+   - The Android companion cannot build until Android tooling is installed and configured.
+   - Required tooling:
+     - JDK 17.
+     - Android Studio or Android command-line tools.
+     - Android SDK Platform 35.
+     - Android SDK Build-Tools.
+     - Android SDK Platform-Tools.
+     - `JAVA_HOME` set to the JDK 17 folder.
+     - `ANDROID_HOME` or `ANDROID_SDK_ROOT` set to the Android SDK folder.
+   - Missing Java or Android SDK configuration is a local machine setup gap, not a repo defect.
+   - If `java -version` fails or the Android environment variables are blank, stop and report the missing tooling.
+   - Do not install Android Studio, JDK 17, or Android SDK components without explicit user approval.
+
+5. User role.
+   - Approve or perform machine-level setup.
+   - Install JDK 17.
+   - Install Android Studio or Android command-line tools.
+   - Install SDK Platform 35, Build-Tools, and Platform-Tools.
+   - Accept Android SDK licenses.
+   - Set environment variables.
+   - Decide whether to run the app after build.
+
+6. Agent role.
+   - Inspect docs first.
+   - Classify safety before build.
+   - Run prerequisite checks.
+   - Build desktop if safe.
+   - Use the NuGet workaround if needed.
+   - Stop and report missing Android tooling.
+   - Build Android only after tooling exists or the user explicitly approves setup.
+   - Do not run the app, add keys, connect services, or use real data unless explicitly approved.
+
+7. Android build after setup.
+
+   ```powershell
+   java -version
+   $env:JAVA_HOME
+   $env:ANDROID_HOME
+   $env:ANDROID_SDK_ROOT
+
+   cd android/VitaMRCompanion
+   .\gradlew.bat assembleDebug
+   ```
+
+Android tooling is required before Android build or phone runtime testing. It is not required before the desktop build. Physical phone testing uses the desktop PC LAN IP, not `127.0.0.1`. Keep `sample-data/bruce-wayne/` blank except for its README and `.gitkeep` placeholder unless synthetic sample records are intentionally approved later.
+
 ## Rebuild Plan
 
 1. Inspect the repo and docs.
