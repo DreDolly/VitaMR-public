@@ -8,5 +8,12 @@ public interface IGeminiSmallTalkService
         string scrubbedUserText,
         string scrubbedConversationContext,
         CancellationToken cancellationToken = default);
-}
 
+    Task<string> AnswerPersonalAsync(
+        bool isEnabled,
+        string modelName,
+        string scrubbedUserText,
+        string topicHint,
+        string captureType,
+        CancellationToken cancellationToken = default);
+}

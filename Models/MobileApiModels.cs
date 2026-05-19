@@ -50,6 +50,15 @@ public sealed class MobileChatRequest
     public bool WasVoiceInput { get; set; }
 }
 
+public sealed class MobilePersonalChatRequest
+{
+    public string Message { get; set; } = string.Empty;
+
+    public string LocalId { get; set; } = string.Empty;
+
+    public string CreatedAt { get; set; } = string.Empty;
+}
+
 public sealed class MobileChatResponse
 {
     public string RequestId { get; set; } = string.Empty;
@@ -269,4 +278,49 @@ public sealed class MobileOfflineItemResponse
     public bool NeedsContext { get; set; }
 
     public string ContextQuestion { get; set; } = string.Empty;
+}
+
+public sealed class MobilePersonalItemRequest
+{
+    public string LocalId { get; set; } = string.Empty;
+
+    public string CreatedAt { get; set; } = string.Empty;
+
+    public string Kind { get; set; } = "personal_text";
+
+    public string Note { get; set; } = string.Empty;
+}
+
+public sealed class MobilePersonalItemResponse
+{
+    public string Status { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
+
+    public string StoredAs { get; set; } = string.Empty;
+}
+
+public sealed class MobilePersonalSummaryResponse
+{
+    public string Status { get; set; } = string.Empty;
+
+    public string UpdatedAt { get; set; } = string.Empty;
+
+    public string Summary { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
+}
+
+public sealed class MobileLifeModeRequest
+{
+    public string Mode { get; set; } = "Medical";
+}
+
+public sealed class MobileLifeModeResponse
+{
+    public string Status { get; set; } = string.Empty;
+
+    public string Mode { get; set; } = "Medical";
+
+    public string Message { get; set; } = string.Empty;
 }

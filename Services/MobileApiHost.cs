@@ -49,6 +49,8 @@ public sealed class MobileApiHost : IAsyncDisposable
 
     public Func<MobileChatRequest, MobileTrustedDevice, CancellationToken, Task<MobileChatResponse>>? ChatHandler { get; set; }
 
+    public Func<MobilePersonalChatRequest, MobileTrustedDevice, CancellationToken, Task<MobileChatResponse>>? PersonalChatHandler { get; set; }
+
     public Func<MobileChartPacketRequest, MobileTrustedDevice, CancellationToken, Task<MobileChartPacketResponse>>? ChartPacketHandler { get; set; }
 
     public Func<MobileVitaMasteryRequest, MobileTrustedDevice, CancellationToken, Task<MobileVitaMasteryResponse>>? VitaMasteryHandler { get; set; }
@@ -56,6 +58,12 @@ public sealed class MobileApiHost : IAsyncDisposable
     public Func<MobileDataHunterQuestRequest, MobileTrustedDevice, CancellationToken, Task<MobileChatResponse>>? DataHunterQuestHandler { get; set; }
 
     public Func<MobileOfflineItemRequest, MobileTrustedDevice, CancellationToken, Task<MobileOfflineItemResponse>>? OfflineItemHandler { get; set; }
+
+    public Func<MobilePersonalItemRequest, MobileTrustedDevice, CancellationToken, Task<MobilePersonalItemResponse>>? PersonalItemHandler { get; set; }
+
+    public Func<MobileTrustedDevice, CancellationToken, Task<MobilePersonalSummaryResponse>>? PersonalSummaryHandler { get; set; }
+
+    public Func<MobileLifeModeRequest, MobileTrustedDevice, CancellationToken, Task<MobileLifeModeResponse>>? LifeModeHandler { get; set; }
 
     public Func<MobileCaptureRequest, MobileTrustedDevice, string, int, string, CancellationToken, Task>? CaptureHandler { get; set; }
 
@@ -167,6 +175,7 @@ public sealed class MobileApiHost : IAsyncDisposable
                 vaultReady = !string.IsNullOrWhiteSpace(_settings.VaultRootPath),
                 activeChartId = _settings.ActiveChartId,
                 activePatientDisplayName = _settings.ActivePatientDisplayName,
+                activeLifeMode = NormalizeLifeMode(_settings.ActiveLifeMode),
                 pairing = "available"
             });
         }
@@ -226,6 +235,13 @@ public sealed class MobileApiHost : IAsyncDisposable
         }
 
         if (request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+            request.Path.Equals("/mobile/personal-chat", StringComparison.OrdinalIgnoreCase))
+        {
+            var personalChatRequest = DeserializeBody<MobilePersonalChatRequest>(request);
+            return await AcceptMobilePersonalChatAsync(personalChatRequest, trustedDevice, cancellationToken);
+        }
+
+        if (request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
             request.Path.Equals("/mobile/chart-packet", StringComparison.OrdinalIgnoreCase))
         {
             var packetRequest = DeserializeBody<MobileChartPacketRequest>(request);
@@ -272,6 +288,26 @@ public sealed class MobileApiHost : IAsyncDisposable
         {
             var offlineRequest = DeserializeBody<MobileOfflineItemRequest>(request);
             return await AcceptOfflineItemAsync(offlineRequest, trustedDevice, cancellationToken);
+        }
+
+        if (request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+            request.Path.Equals("/mobile/personal-item", StringComparison.OrdinalIgnoreCase))
+        {
+            var personalRequest = DeserializeBody<MobilePersonalItemRequest>(request);
+            return await AcceptPersonalItemAsync(personalRequest, trustedDevice, cancellationToken);
+        }
+
+        if (request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) &&
+            request.Path.Equals("/mobile/personal-summary", StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetPersonalSummaryAsync(trustedDevice, cancellationToken);
+        }
+
+        if (request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+            request.Path.Equals("/mobile/life-mode", StringComparison.OrdinalIgnoreCase))
+        {
+            var modeRequest = DeserializeBody<MobileLifeModeRequest>(request);
+            return await SetLifeModeAsync(modeRequest, trustedDevice, cancellationToken);
         }
 
         return ApiResponse.Json(HttpStatusCode.NotFound, new
@@ -376,6 +412,38 @@ public sealed class MobileApiHost : IAsyncDisposable
             Status = "accepted",
             Route = "desktop_orchestrator_pending",
             Reply = "VitaMR desktop received this mobile chat request. Full Dolly response bridging is the next desktop API slice; no chart write was made from the phone."
+        });
+    }
+
+    private async Task<ApiResponse> AcceptMobilePersonalChatAsync(
+        MobilePersonalChatRequest request,
+        MobileTrustedDevice device,
+        CancellationToken cancellationToken)
+    {
+        var requestId = $"PERS-{DateTimeOffset.Now:yyyyMMddHHmmss}-{RandomNumberGenerator.GetInt32(1000, 9999)}";
+        var message = string.IsNullOrWhiteSpace(request.Message)
+            ? string.Empty
+            : request.Message.Trim();
+
+        AppendMobileQueue("personal_chat", requestId, device, string.Empty, message);
+
+        if (PersonalChatHandler is not null)
+        {
+            var response = await PersonalChatHandler(request, device, cancellationToken);
+            if (string.IsNullOrWhiteSpace(response.RequestId))
+            {
+                response.RequestId = requestId;
+            }
+
+            return ApiResponse.Json(HttpStatusCode.OK, response);
+        }
+
+        return ApiResponse.Json(HttpStatusCode.Accepted, new MobileChatResponse
+        {
+            RequestId = requestId,
+            Status = "accepted",
+            Route = "personal_chat_pending",
+            Reply = "Saved to Personal Mode. Desktop Personal chat routing is not available yet."
         });
     }
 
@@ -571,6 +639,78 @@ public sealed class MobileApiHost : IAsyncDisposable
             NeedsContext = true,
             ContextQuestion = "Should Dolly save only, review, summarize, or add this to the chart after confirmation?"
         });
+    }
+
+    private async Task<ApiResponse> AcceptPersonalItemAsync(
+        MobilePersonalItemRequest request,
+        MobileTrustedDevice device,
+        CancellationToken cancellationToken)
+    {
+        AppendMobileQueue("personal_item", request.LocalId, device, string.Empty, request.Note);
+
+        if (PersonalItemHandler is not null)
+        {
+            var response = await PersonalItemHandler(request, device, cancellationToken);
+            return ApiResponse.Json(HttpStatusCode.OK, response);
+        }
+
+        return ApiResponse.Json(HttpStatusCode.Accepted, new MobilePersonalItemResponse
+        {
+            Status = "received",
+            Message = "VitaMR desktop received this personal item.",
+            StoredAs = string.IsNullOrWhiteSpace(request.Kind) ? "personal_text" : request.Kind.Trim()
+        });
+    }
+
+    private async Task<ApiResponse> GetPersonalSummaryAsync(
+        MobileTrustedDevice device,
+        CancellationToken cancellationToken)
+    {
+        if (PersonalSummaryHandler is not null)
+        {
+            var response = await PersonalSummaryHandler(device, cancellationToken);
+            return ApiResponse.Json(HttpStatusCode.OK, response);
+        }
+
+        return ApiResponse.Json(HttpStatusCode.OK, new MobilePersonalSummaryResponse
+        {
+            Status = "unavailable",
+            UpdatedAt = DateTimeOffset.Now.ToString("O"),
+            Summary = string.Empty,
+            Message = "Desktop Personal memory summary is not available yet."
+        });
+    }
+
+    private async Task<ApiResponse> SetLifeModeAsync(
+        MobileLifeModeRequest request,
+        MobileTrustedDevice device,
+        CancellationToken cancellationToken)
+    {
+        request.Mode = NormalizeLifeMode(request.Mode);
+        if (LifeModeHandler is not null)
+        {
+            var response = await LifeModeHandler(request, device, cancellationToken);
+            return ApiResponse.Json(HttpStatusCode.OK, response);
+        }
+
+        _settings.ActiveLifeMode = request.Mode;
+        return ApiResponse.Json(HttpStatusCode.OK, new MobileLifeModeResponse
+        {
+            Status = "life_mode_synced",
+            Mode = request.Mode,
+            Message = $"Desktop life mode is now {request.Mode}."
+        });
+    }
+
+    private static string NormalizeLifeMode(string? mode)
+    {
+        return mode?.Trim().ToLowerInvariant() switch
+        {
+            "personal" => "Personal",
+            "lockbox" or "secret" or "secret mode" or "local lockbox" => "Lockbox",
+            "pets" => "Pets",
+            _ => "Medical"
+        };
     }
 
     private void AppendMobileQueue(string kind, string id, MobileTrustedDevice device, string chartId, string text)

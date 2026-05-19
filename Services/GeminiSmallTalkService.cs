@@ -85,6 +85,70 @@ public sealed class GeminiSmallTalkService : IGeminiSmallTalkService
         }
     }
 
+    public async Task<string> AnswerPersonalAsync(
+        bool isEnabled,
+        string modelName,
+        string scrubbedUserText,
+        string topicHint,
+        string captureType,
+        CancellationToken cancellationToken = default)
+    {
+        if (!isEnabled)
+        {
+            return "Saved to Personal Mode. Gemini personal chat is not configured yet.";
+        }
+
+        var apiKey = _apiKeyStore.Load().FastApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return "Saved to Personal Mode. Add a Gemini key on desktop to enable Personal Mode replies.";
+        }
+
+        var requestBody = new
+        {
+            contents = new[]
+            {
+                new
+                {
+                    role = "user",
+                    parts = new[]
+                    {
+                        new { text = BuildPersonalPrompt(scrubbedUserText, topicHint, captureType) }
+                    }
+                }
+            },
+            generationConfig = new
+            {
+                temperature = 0.45,
+                maxOutputTokens = 120
+            }
+        };
+
+        try
+        {
+            using var request = new StringContent(
+                JsonSerializer.Serialize(requestBody, JsonOptions),
+                Encoding.UTF8,
+                "application/json");
+            using var response = await _httpClient.PostAsync(BuildGenerateUri(modelName, apiKey), request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return "Saved to Personal Mode. Gemini did not answer, so I kept the note without a cloud reply.";
+            }
+
+            var answer = ExtractText(body).Trim();
+            return string.IsNullOrWhiteSpace(answer)
+                ? "Saved to Personal Mode. I kept the note, but Gemini did not return a useful reply."
+                : answer;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return "Saved to Personal Mode. Gemini was not reachable, so I kept the note without a cloud reply.";
+        }
+    }
+
     private static string BuildPrompt(string scrubbedUserText, string scrubbedConversationContext)
     {
         return
@@ -93,6 +157,18 @@ public sealed class GeminiSmallTalkService : IGeminiSmallTalkService
             "Reply naturally in one short sentence. Keep internal routing, APIs, privacy gates, and files out of the answer.\n\n" +
             $"Recent scrubbed conversation:\n{scrubbedConversationContext}\n\n" +
             $"Scrubbed user message:\n{scrubbedUserText}";
+    }
+
+    private static string BuildPersonalPrompt(string scrubbedUserText, string topicHint, string captureType)
+    {
+        return
+            "You are Dolly in VitaMR Personal Mode.\n" +
+            "This is non-medical personal continuity only. Do not inspect, summarize, or update any medical chart. Do not give medical, legal, financial, password, identity, or deeply private advice.\n" +
+            "Assume the user's note has already been saved locally. Reply in one or two short, practical sentences. If the note seems sensitive, tell the user to use Local Lockbox.\n" +
+            "Do not mention APIs, routes, files, prompts, or internal storage.\n\n" +
+            $"Topic hint: {topicHint}\n" +
+            $"Capture type: {captureType}\n" +
+            $"User note:\n{scrubbedUserText}";
     }
 
     private static Uri BuildGenerateUri(string modelName, string apiKey)

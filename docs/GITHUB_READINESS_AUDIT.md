@@ -1,6 +1,6 @@
 # GitHub Readiness Audit
 
-Last updated: 2026-05-17
+Last updated: 2026-05-19
 
 Checklist source: `docs/GITHUB_SAFETY_REVIEW_CHECKLIST.md`
 
@@ -8,7 +8,7 @@ Checklist source: `docs/GITHUB_SAFETY_REVIEW_CHECKLIST.md`
 
 Current status: `safe for public source inspection and synthetic-data build testing`, with `REVIEW` items to resolve before broader beta use.
 
-No blocker was found in the current tracked file tree during the Day 17 safety pass. Inspection happened before build testing. No API keys were added, no external services were connected, no real medical records were used, and the app was not launched.
+No blocker was found in the current tracked file tree during the Day 19 safety pass. Inspection happened before build testing. No API keys were added, no external services were connected, no real medical records were used, and the app was not launched.
 
 ## Release Strategy
 
@@ -39,6 +39,9 @@ No blocker was found in the current tracked file tree during the Day 17 safety p
 | REVIEW | `android/VitaMRCompanion/app/src/main/AndroidManifest.xml` | Android declares `INTERNET`, `ACCESS_NETWORK_STATE`, `USE_BIOMETRIC`, and allows cleartext traffic. | These are understandable for a LAN companion prototype, but privacy-sensitive permissions and cleartext LAN behavior should be explained. | Document permissions and LAN-only cleartext rationale before public release. | No | No |
 | REVIEW | `Services/*Gemini*.cs`; `Services/WindowsDpapiGeminiApiKeyStore.cs` | Gemini API integration exists and stores configured keys under local app data with Windows DPAPI protection. Backend processing defaults disabled in settings. | External model calls must stay explicit, scrubbed, and user-controlled. Safety inspection can happen without keys, but meaningful Dolly testing needs a configured provider. | Keep README warning: no keys for safety inspection; require provider setup before evaluating Dolly's real behavior. | No | No |
 | OK | API setup UX | A local Provider Setup panel now supports provider selection, local protected key save, masked configured/not configured status, and clear key action. | Users need a safe route for provider setup while keeping keys out of Git and screenshots. | Keep testing with Gemini first; do not claim non-Gemini routing is implemented yet. | No | No |
+| OK | `android/VitaMRCompanion/app/src/main/java/com/dredolly/vitamr/MainActivity.kt` | Phone-side Personal Gemini key storage now migrates to Android Keystore-backed encrypted storage. | The public source contains storage logic only, not a real key. Local users must still avoid screenshots/logs containing keys. | Keep real keys local and out of Git; continue documenting Personal Cloud as non-sensitive only. | No | No |
+| OK | `ViewModels/MainWindowViewModel.cs` | Personal Vault YouTube/video routing framework is included with generic public template text. | Private project goals and saved Personal Vault data must not ship publicly. | Keep public template generic; users can customize locally after trust setup. | No | No |
+| OK | Current tracked tree | Day 19 scan found no tracked live Personal Vault files, phone preference files, API keys, local vault data, build outputs, or public Bruce Wayne medical records. | Confirms promoted Personal/YouTube source changes did not bring private saved data into public staging. | Rerun before every public push. | No | No |
 | REVIEW | Multi-provider support | Current implementation is Gemini-centered. OpenAI, Anthropic, and xAI provider paths are not implemented yet. | Public positioning should not imply all provider routes are complete. | Add provider abstraction, local protected key storage per provider, and user-selected provider routing. Until then, keep docs clear that non-Gemini routing is planned. | No, if disclosed as current limitation | No |
 | REVIEW | `Services/OllamaLocalModelWarmupService.cs`; `Services/LocalPythonSidecarManager.cs` | Code can start local Ollama and local Python sidecars when the app workflow requests them. | This affects local processes and can surprise cautious users if not documented. | Document local process startup behavior in `GETTING_STARTED` and laptop rebuild instructions. | No | No |
 | REVIEW | `Services/GeminiBackendPipelineService.cs`; `ViewModels/MainWindowViewModel.cs` | Code includes file copy, chart archive/move, and temporary staging cleanup logic. | File-system effects are expected for a local record app, but should be understood before real use. | Keep synthetic-only first-run guidance; document that testing should use a throwaway chart folder. | No | No |
@@ -92,6 +95,20 @@ Checkpoint `f158734` was retested as a docs/toolchain-gate-only pass.
 - Bruce Wayne sample data remained blank except README and `.gitkeep`.
 - Fresh source archive scan found no unsafe tracked files or generated build artifacts.
 
+## Day 19 Personal/YouTube Promotion Safety Pass
+
+Checkpoint prepared from private Personal Vault / phone sync improvements and sanitized for public staging.
+
+- Current classification remains `safe to build with synthetic data`.
+- Promoted source changes include Personal phone key migration to Android Keystore, Personal Cloud cooldown/rolling brief, host Personal session snapshot labeling, and generic host-side Personal Vault YouTube/video routing/export structure.
+- Private transformational-goal text and live Personal Vault project files were not committed to public staging.
+- Public defaults were sanitized to neutral `Vault Manager` placeholders.
+- Bruce Wayne sample data remained blank: only `sample-data/bruce-wayne/README.md` and `sample-data/bruce-wayne/synthetic-records/.gitkeep`.
+- Secret/local-data scan found no real API keys, tracked phone preferences, local vault files, `.env`, databases, PDFs, keystores, APK/AAB files, or build artifacts in the tracked tree.
+- Desktop build passed: `dotnet build VitaMR.csproj -p:OutDir=...\artifacts\build-verify\`.
+- Android build passed after setting local `ANDROID_HOME`/`ANDROID_SDK_ROOT`; no `local.properties` was committed.
+- The app was not launched, no provider keys were added, no external services were connected, and no real medical records were used.
+
 ## Git History Notes
 
 The public staging repo has been recreated as a one-commit public release branch and does not include the original private repo history.
@@ -124,4 +141,4 @@ Clean release commit: the one-commit public release branch named `Initial public
 
 ## Current Decision
 
-Current tracked HEAD is safe for public source inspection and toolchain-gated synthetic build setup. Desktop and Android synthetic builds passed on this machine before the clean history rewrite; the latest `f158734` retest was docs/toolchain-gate-only and did not run builds. Android build verification requires Android tooling to be installed/configured first with explicit user approval. The app was not launched, no provider keys were added, and no real medical records were used.
+Current tracked HEAD is safe for public source inspection and toolchain-gated synthetic build setup. Desktop and Android synthetic builds passed on this machine for the Day 19 Personal/YouTube promotion after sanitizing private Personal framework text. Android build verification still requires Android tooling to be installed/configured locally with explicit user approval. The app was not launched, no provider keys were added, no external services were connected, and no real medical records were used.

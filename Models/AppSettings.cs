@@ -44,17 +44,19 @@ public sealed class AppSettings
 
     public string HealthspanCoachingMode { get; set; } = "Record Assistant Mode";
 
+    public string ActiveLifeMode { get; set; } = "Medical";
+
     public string SelectedOmniboxAction { get; set; } = "Ask / Update Existing Patient";
 
-    public string VaultOwnerName { get; set; } = "Local Owner";
+    public string VaultOwnerName { get; set; } = "Vault Manager";
 
     public string VaultOwnerRole { get; set; } = "Project Owner";
 
-    public string VaultOwnerDeletePassword { get; set; } = "CHANGE_ME";
+    public string VaultOwnerDeletePassword { get; set; } = "Vault Manager";
 
-    public string ChartManagerName { get; set; } = "Chart Manager";
+    public string ChartManagerName { get; set; } = "Vault Manager";
 
-    public string ChartManagerPassword { get; set; } = "CHANGE_ME";
+    public string ChartManagerPassword { get; set; } = "Vault Manager";
 
     public bool IsSyntheticTestMode { get; set; } = true;
 

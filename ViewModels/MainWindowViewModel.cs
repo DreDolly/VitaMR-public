@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -29,6 +30,12 @@ public sealed class MainWindowViewModel : ObservableObject
     private const string DataHunterAnswerStatusNotApplicable = "not_applicable";
     private const string DataHunterAnswerStatusRecordSuggested = "record_suggested_pending_confirmation";
     private const string DataHunterAnswerStatusRecordConfirmed = "record_confirmed_by_user";
+    private const int PersonalVaultWeaveThreshold = 12;
+    private const string PersonalVaultTaggedCaptureFileName = "tagged-captures.jsonl";
+    private const string PersonalVaultBatchFileName = "wiki-batches.jsonl";
+    private const string PersonalVaultMemorySummaryFileName = "Personal_Memory_Summary.md";
+    private const string YouTubeProjectSlug = "LT_Transformation_Early_Detection";
+    private const string YouTubeCurrentVideoFileName = "Current_Video.json";
     private static readonly string[] DataHunterBasicQuestions =
     [
         "What are your main long-term health goals? For example: live longer and stay functional, feel good day to day, prevent future problems, control a known disease, not sure yet, or something else.",
@@ -245,6 +252,9 @@ public sealed class MainWindowViewModel : ObservableObject
     private PendingPhotoUpdate? _pendingPhotoUpdate;
     private bool _pendingSetupRepairConfirmation;
     private string _providerApiKeyInput = string.Empty;
+    private string _personalVaultSearchText = string.Empty;
+    private string _selectedPersonalVaultTopic = "All Topics";
+    private string _personalVaultStatus = "Personal Vault not loaded yet";
     private AppSettings _settings;
     private string _promptText = string.Empty;
     private bool _isListening;
@@ -452,6 +462,10 @@ public sealed class MainWindowViewModel : ObservableObject
         UseHealthspanSupportCommand = new RelayCommand(() => ApplyHealthspanMode("Healthspan Support Mode", true));
         UseLongevityPerformanceCommand = new RelayCommand(() => ApplyHealthspanMode("Longevity Performance Mode", true));
         UseExperimentalLongevityCommand = new RelayCommand(() => ApplyHealthspanMode("Elite / Experimental Longevity Mode", true));
+        UseMedicalLifeModeCommand = new RelayCommand(() => ApplyLifeMode("Medical"));
+        UsePersonalLifeModeCommand = new RelayCommand(() => ApplyLifeMode("Personal"));
+        UseLockboxLifeModeCommand = new RelayCommand(() => ApplyLifeMode("Lockbox"));
+        UsePetsLifeModeCommand = new RelayCommand(() => ApplyLifeMode("Pets"));
         ShowConversationCommand = new RelayCommand(ShowConversation);
         ShowAdminDashboardCommand = new RelayCommand(ShowAdminDashboard);
         ShowVitaMasteryCommand = new RelayCommand(ShowVitaMastery);
@@ -467,9 +481,12 @@ public sealed class MainWindowViewModel : ObservableObject
         ClearProviderApiKeyCommand = new RelayCommand(ClearProviderApiKey);
         ChooseVaultFolderCommand = new RelayCommand(ChooseVaultFolder);
         RefreshPhoneInboxCommand = new RelayCommand(RefreshPhoneInbox);
+        RefreshPersonalVaultCommand = new RelayCommand(RefreshPersonalVault);
+        WeavePersonalVaultCommand = new RelayCommand(WeavePersonalVault);
         PhoneInboxActionCommand = new RelayCommand(HandlePhoneInboxAction);
 
         RefreshPhoneInbox();
+        RefreshPersonalVault();
         RefreshAdminDashboard();
         BuildEvaluationQuestions();
         StartFreshConversation();
@@ -500,6 +517,10 @@ public sealed class MainWindowViewModel : ObservableObject
     public ObservableCollection<EvaluationQuestionViewModel> EvaluationQuestions { get; } = [];
 
     public ObservableCollection<PhoneInboxItemViewModel> PhoneInboxItems { get; } = [];
+
+    public ObservableCollection<PersonalVaultItemViewModel> PersonalVaultItems { get; } = [];
+
+    public ObservableCollection<string> PersonalVaultTopicFilters { get; } = ["All Topics"];
 
     public ObservableCollection<VitaMasteryQuestRowViewModel> VitaMasteryActiveQuestRows { get; } = [];
 
@@ -537,6 +558,14 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public RelayCommand UseExperimentalLongevityCommand { get; }
 
+    public RelayCommand UseMedicalLifeModeCommand { get; }
+
+    public RelayCommand UsePersonalLifeModeCommand { get; }
+
+    public RelayCommand UseLockboxLifeModeCommand { get; }
+
+    public RelayCommand UsePetsLifeModeCommand { get; }
+
     public RelayCommand ShowConversationCommand { get; }
 
     public RelayCommand ShowAdminDashboardCommand { get; }
@@ -567,7 +596,42 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public RelayCommand RefreshPhoneInboxCommand { get; }
 
+    public RelayCommand RefreshPersonalVaultCommand { get; }
+
+    public RelayCommand WeavePersonalVaultCommand { get; }
+
     public RelayCommand PhoneInboxActionCommand { get; }
+
+    public string PersonalVaultSearchText
+    {
+        get => _personalVaultSearchText;
+        set
+        {
+            if (SetProperty(ref _personalVaultSearchText, value ?? string.Empty))
+            {
+                RefreshPersonalVault();
+            }
+        }
+    }
+
+    public string PersonalVaultStatus
+    {
+        get => _personalVaultStatus;
+        private set => SetProperty(ref _personalVaultStatus, value);
+    }
+
+    public string SelectedPersonalVaultTopic
+    {
+        get => _selectedPersonalVaultTopic;
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? "All Topics" : value.Trim();
+            if (SetProperty(ref _selectedPersonalVaultTopic, normalized))
+            {
+                RefreshPersonalVault();
+            }
+        }
+    }
 
     public string ActivePersona => "Active Persona: Dolly";
 
@@ -823,7 +887,7 @@ public sealed class MainWindowViewModel : ObservableObject
         get => _settings.ChartManagerName;
         set
         {
-            var normalized = string.IsNullOrWhiteSpace(value) ? "Chart Manager" : value.Trim();
+            var normalized = string.IsNullOrWhiteSpace(value) ? "Vault Manager" : value.Trim();
             if (_settings.ChartManagerName == normalized)
             {
                 return;
@@ -840,7 +904,7 @@ public sealed class MainWindowViewModel : ObservableObject
         get => _settings.ChartManagerPassword;
         set
         {
-            var normalized = string.IsNullOrWhiteSpace(value) ? "CHANGE_ME" : value.Trim();
+            var normalized = string.IsNullOrWhiteSpace(value) ? "Vault Manager" : value.Trim();
             if (_settings.ChartManagerPassword == normalized)
             {
                 return;
@@ -1089,6 +1153,28 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IsLongevityPerformanceSelected => HealthspanCoachingMode.Equals("Longevity Performance Mode", StringComparison.OrdinalIgnoreCase);
 
     public bool IsExperimentalLongevitySelected => HealthspanCoachingMode.Equals("Elite / Experimental Longevity Mode", StringComparison.OrdinalIgnoreCase);
+
+    public string ActiveLifeMode
+    {
+        get => NormalizeLifeMode(_settings.ActiveLifeMode);
+        set => ApplyLifeMode(value);
+    }
+
+    public bool IsMedicalLifeModeSelected => ActiveLifeMode.Equals("Medical", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsPersonalLifeModeSelected => ActiveLifeMode.Equals("Personal", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsLockboxLifeModeSelected => ActiveLifeMode.Equals("Lockbox", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsPetsLifeModeSelected => ActiveLifeMode.Equals("Pets", StringComparison.OrdinalIgnoreCase);
+
+    public string ActiveLifeModeDetail => ActiveLifeMode switch
+    {
+        "Personal" => "Personal notes stay out of medical chart evidence.",
+        "Lockbox" => "Lockbox notes are sensitive, local/trusted-host only, and not sent to cloud AI.",
+        "Pets" => "Pet notes stay animal/pet context, not a human chart.",
+        _ => "Medical Mode is the controlled chart/evidence lane."
+    };
 
     public Visibility HealthspanIntensityVisibility => IsHealthspanModeSelected
         ? Visibility.Visible
@@ -2981,14 +3067,14 @@ public sealed class MainWindowViewModel : ObservableObject
 
         if (LooksLikeSetupControlText(_settings.ChartManagerName))
         {
-            _settings.ChartManagerName = FirstNonEmpty(_settings.ChartManagerNickname, "Chart Manager");
+            _settings.ChartManagerName = FirstNonEmpty(_settings.ChartManagerNickname, "Vault Manager");
             _settings.VaultOwnerName = _settings.ChartManagerName;
             lines.Add($"Chart Manager name repaired to {_settings.ChartManagerName}.");
         }
 
         if (LooksLikeSetupControlText(_settings.ActiveUserName))
         {
-            _settings.ActiveUserName = FirstNonEmpty(_settings.ChartManagerNickname, _settings.ChartManagerName, "Chart Manager");
+            _settings.ActiveUserName = FirstNonEmpty(_settings.ChartManagerNickname, _settings.ChartManagerName, "Vault Manager");
             lines.Add($"Active user repaired to {_settings.ActiveUserName}.");
         }
 
@@ -4499,6 +4585,92 @@ public sealed class MainWindowViewModel : ObservableObject
         }
     }
 
+    public async Task<MobileChatResponse> HandleMobilePersonalChatAsync(
+        MobilePersonalChatRequest request,
+        MobileTrustedDevice device,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Application.Current.Dispatcher.CheckAccess())
+        {
+            var operation = Application.Current.Dispatcher.InvokeAsync(
+                () => HandleMobilePersonalChatAsync(request, device, cancellationToken),
+                DispatcherPriority.Normal,
+                cancellationToken);
+            return await await operation.Task;
+        }
+
+        var requestId = $"PERS-{DateTimeOffset.Now:yyyyMMddHHmmss}";
+        var note = string.IsNullOrWhiteSpace(request.Message) ? "(empty personal item)" : request.Message.Trim();
+        var createdAt = string.IsNullOrWhiteSpace(request.CreatedAt) ? DateTimeOffset.Now.ToString("O") : request.CreatedAt.Trim();
+        var captureId = string.IsNullOrWhiteSpace(request.LocalId) ? Guid.NewGuid().ToString("N") : request.LocalId.Trim();
+        var capture = SavePersonalVaultCapture(
+            captureId,
+            "personal",
+            "personal_text",
+            note,
+            createdAt,
+            device.DeviceId,
+            device.DeviceName);
+        RouteYouTubeProjectCapture(capture);
+
+        if (TryBuildYouTubeVideoExport(note, out var exportLines))
+        {
+            AddArchivedMessage(
+                MessageAuthor.Dolly,
+                AgentLabel,
+                exportLines,
+                mode: "mobile_personal_youtube_export",
+                linkedChartId: string.Empty);
+
+            RefreshPersonalVault();
+
+            return new MobileChatResponse
+            {
+                RequestId = requestId,
+                Status = "answered",
+                Route = "desktop_personal_youtube_export",
+                Reply = string.Join(Environment.NewLine + Environment.NewLine, exportLines),
+                Lines = exportLines.ToList(),
+                ActiveChartId = string.Empty,
+                ActivePatientDisplayName = "Personal"
+            };
+        }
+
+        var sensitiveWarning = LooksSensitiveForPersonalCloud(note)
+            ? "This may be sensitive. I saved it in Personal Mode, but use Local Lockbox for sensitive medical, financial, legal, password, identity, or deeply private notes."
+            : string.Empty;
+        var responseText = await _geminiSmallTalkService.AnswerPersonalAsync(
+            SelectedAiProvider.Equals("Gemini", StringComparison.OrdinalIgnoreCase),
+            GeminiFastModelName,
+            ScrubPersonalModeTextForCloud(note),
+            capture.TopicHint,
+            capture.CaptureType,
+            cancellationToken);
+
+        var lines = string.IsNullOrWhiteSpace(sensitiveWarning)
+            ? new[] { responseText }
+            : new[] { sensitiveWarning, responseText };
+        AddArchivedMessage(
+            MessageAuthor.Dolly,
+            AgentLabel,
+            lines,
+            mode: "mobile_personal_gemini_answer",
+            linkedChartId: string.Empty);
+
+        RefreshPersonalVault();
+
+        return new MobileChatResponse
+        {
+            RequestId = requestId,
+            Status = "answered",
+            Route = "desktop_personal_gemini_fast",
+            Reply = string.Join(Environment.NewLine + Environment.NewLine, lines),
+            Lines = lines.ToList(),
+            ActiveChartId = string.Empty,
+            ActivePatientDisplayName = "Personal"
+        };
+    }
+
     private ChartContext ResolveMobileChartContext(string chartId)
     {
         if (!string.IsNullOrWhiteSpace(chartId))
@@ -4935,6 +5107,1229 @@ public sealed class MainWindowViewModel : ObservableObject
         });
     }
 
+    public Task<MobilePersonalItemResponse> HandleMobilePersonalItemAsync(
+        MobilePersonalItemRequest request,
+        MobileTrustedDevice device,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Application.Current.Dispatcher.CheckAccess())
+        {
+            var operation = Application.Current.Dispatcher.InvokeAsync(
+                () => HandleMobilePersonalItemAsync(request, device, cancellationToken),
+                DispatcherPriority.Normal,
+                cancellationToken);
+            return operation.Task.Unwrap();
+        }
+
+        var kind = string.IsNullOrWhiteSpace(request.Kind) ? "personal_text" : request.Kind.Trim();
+        var note = string.IsNullOrWhiteSpace(request.Note) ? "(empty personal item)" : request.Note.Trim();
+        var createdAt = string.IsNullOrWhiteSpace(request.CreatedAt) ? DateTimeOffset.Now.ToString("O") : request.CreatedAt.Trim();
+        var lane = kind.Equals("pet_note", StringComparison.OrdinalIgnoreCase)
+            ? "pets"
+            : kind.Equals("lockbox_note", StringComparison.OrdinalIgnoreCase)
+                ? "lockbox"
+                : "personal";
+        var folder = GetPersonalVaultFolder();
+        Directory.CreateDirectory(folder);
+
+        var captureId = string.IsNullOrWhiteSpace(request.LocalId) ? Guid.NewGuid().ToString("N") : request.LocalId.Trim();
+        var capture = SavePersonalVaultCapture(
+            captureId,
+            lane,
+            kind,
+            note,
+            createdAt,
+            device.DeviceId,
+            device.DeviceName);
+        RouteYouTubeProjectCapture(capture);
+
+        var message = lane switch
+        {
+            "pets" => "Saved pet note to the desktop Personal Vault. It remains animal/pet context, not a human medical chart.",
+            "lockbox" => "Saved Lockbox note to the trusted desktop. It was not sent to Gemini or medical chart evidence.",
+            _ when IsPersonalSessionKind(kind) => "Saved phone Personal session snapshot to the desktop Personal Vault. It is sync history, not medical chart evidence.",
+            _ => "Saved personal note to the desktop Personal Vault. It remains separate from medical records."
+        };
+
+        AddArchivedMessage(
+            MessageAuthor.Dolly,
+            AgentLabel,
+            [message, TruncateForChronos(note, 180)],
+            mode: lane switch
+            {
+                "pets" => "mobile_pet_note_saved",
+                "lockbox" => "mobile_lockbox_note_saved",
+                _ when IsPersonalSessionKind(kind) => "mobile_personal_session_saved",
+                _ => "mobile_personal_note_saved"
+            },
+            linkedChartId: string.Empty);
+
+        RefreshPreview();
+        RefreshPersonalVault();
+        if (GetUnwovenPersonalVaultCaptures().Count >= PersonalVaultWeaveThreshold)
+        {
+            WeavePersonalVault();
+        }
+        else
+        {
+            RefreshPersonalMemorySummary();
+        }
+
+        return Task.FromResult(new MobilePersonalItemResponse
+        {
+            Status = lane switch
+            {
+                "pets" => "pet_vault_synced",
+                "lockbox" => "lockbox_vault_synced",
+                _ => "personal_vault_synced"
+            },
+            Message = message,
+            StoredAs = lane
+        });
+    }
+
+    private PersonalVaultCapture SavePersonalVaultCapture(
+        string captureId,
+        string lane,
+        string kind,
+        string note,
+        string createdAt,
+        string deviceId,
+        string deviceName)
+    {
+        var folder = GetPersonalVaultFolder();
+        Directory.CreateDirectory(folder);
+        var normalizedLane = NormalizePersonalVaultLane(lane);
+        var capture = BuildPersonalVaultCapture(
+            captureId,
+            normalizedLane,
+            kind,
+            note,
+            createdAt,
+            DateTimeOffset.Now,
+            deviceId,
+            deviceName);
+        var entry = JsonSerializer.Serialize(capture, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        File.AppendAllLines(Path.Combine(folder, $"{normalizedLane}-notes.jsonl"), [entry]);
+        if (!normalizedLane.Equals("lockbox", StringComparison.OrdinalIgnoreCase))
+        {
+            File.AppendAllLines(Path.Combine(folder, PersonalVaultTaggedCaptureFileName), [entry]);
+        }
+
+        return capture;
+    }
+
+    private void RouteYouTubeProjectCapture(PersonalVaultCapture capture)
+    {
+        if (!ShouldRouteToYouTubeProject(capture))
+        {
+            EnsureYouTubeProjectFramework();
+            return;
+        }
+
+        var projectFolder = EnsureYouTubeProjectFramework();
+        var normalized = NormalizeConfirmation(capture.Note);
+        if (LooksLikeFutureVideoIdea(normalized))
+        {
+            AppendMarkdownCapture(
+                Path.Combine(projectFolder, "Future_Video_Ideas.md"),
+                "Future Video Ideas",
+                capture);
+            return;
+        }
+
+        var video = GetOrCreateCurrentYouTubeVideo(capture);
+        var videoFolder = GetYouTubeVideoFolder(projectFolder, video);
+        Directory.CreateDirectory(videoFolder);
+        EnsureYouTubeVideoFiles(videoFolder, video);
+
+        AppendMarkdownCapture(Path.Combine(videoFolder, "Raw_Captures.md"), "Raw Captures", capture);
+        AppendMarkdownCapture(Path.Combine(videoFolder, ResolveYouTubeVideoSectionFile(normalized)), ResolveYouTubeVideoSectionTitle(normalized), capture);
+    }
+
+    private static bool ShouldRouteToYouTubeProject(PersonalVaultCapture capture)
+    {
+        if (!NormalizePersonalVaultLane(capture.Lane).Equals("personal", StringComparison.OrdinalIgnoreCase) ||
+            IsPersonalSessionKind(capture.Kind))
+        {
+            return false;
+        }
+
+        var normalized = NormalizeConfirmation(capture.Note);
+        return ContainsAny(
+            normalized,
+            "youtube",
+            "video",
+            "thumbnail",
+            "title",
+            "hook",
+            "intro",
+            "micro transformation",
+            "microtransformation",
+            "micro story",
+            "setup",
+            "progress",
+            "payoff",
+            "early detection",
+            "longevity",
+            "healthspan",
+            "vitamr");
+    }
+
+    private static bool LooksLikeFutureVideoIdea(string normalized)
+    {
+        return ContainsAny(normalized, "next video", "future video", "another video", "second video", "later video");
+    }
+
+    private string EnsureYouTubeProjectFramework()
+    {
+        var projectFolder = GetYouTubeProjectFolder();
+        var videosFolder = Path.Combine(projectFolder, "videos");
+        Directory.CreateDirectory(videosFolder);
+        WriteIfMissing(
+            Path.Combine(projectFolder, "Project_Index.md"),
+            BuildYouTubeProjectIndexMarkdown());
+        WriteIfMissing(
+            Path.Combine(projectFolder, "Strategy.md"),
+            BuildYouTubeProjectStrategyMarkdown());
+        WriteIfMissing(
+            Path.Combine(projectFolder, "Future_Video_Ideas.md"),
+            "# Future Video Ideas" + Environment.NewLine + Environment.NewLine);
+        return projectFolder;
+    }
+
+    private YouTubeVideoContext GetOrCreateCurrentYouTubeVideo(PersonalVaultCapture capture)
+    {
+        var projectFolder = EnsureYouTubeProjectFramework();
+        var currentPath = Path.Combine(projectFolder, YouTubeCurrentVideoFileName);
+        var current = ReadYouTubeVideoContext(currentPath);
+        if (current is not null)
+        {
+            current.LastTouchedAt = DateTimeOffset.Now.ToString("O");
+            File.WriteAllText(currentPath, JsonSerializer.Serialize(current, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+            return current;
+        }
+
+        var title = InferYouTubeWorkingTitle(capture.Note);
+        var video = new YouTubeVideoContext
+        {
+            VideoId = NextYouTubeVideoId(projectFolder),
+            Slug = SlugifyPersonalVaultTopic(title),
+            WorkingTitle = title,
+            Status = "active",
+            CreatedAt = DateTimeOffset.Now.ToString("O"),
+            LastTouchedAt = DateTimeOffset.Now.ToString("O"),
+            ParentProject = YouTubeProjectSlug,
+            MicroTransformation = "From prevention-only or occasional checkup thinking to continuous early detection as a practical longevity practice."
+        };
+        File.WriteAllText(currentPath, JsonSerializer.Serialize(video, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+        return video;
+    }
+
+    private static YouTubeVideoContext? ReadYouTubeVideoContext(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        return RunCatching(() => JsonSerializer.Deserialize<YouTubeVideoContext>(File.ReadAllText(path), new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+    }
+
+    private static T? RunCatching<T>(Func<T> action)
+    {
+        try
+        {
+            return action();
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    private static string InferYouTubeWorkingTitle(string note)
+    {
+        var explicitTopic = ExtractExplicitPersonalVaultTopic(note);
+        if (!string.IsNullOrWhiteSpace(explicitTopic))
+        {
+            return explicitTopic;
+        }
+
+        return "Early Detection Changed How I Think About Longevity";
+    }
+
+    private static string NextYouTubeVideoId(string projectFolder)
+    {
+        var year = DateTimeOffset.Now.Year;
+        var videosFolder = Path.Combine(projectFolder, "videos");
+        Directory.CreateDirectory(videosFolder);
+        var max = Directory.GetDirectories(videosFolder, $"YTV-{year}-*")
+            .Select(path => Regex.Match(Path.GetFileName(path), $@"YTV-{year}-(?<n>\d{{4}})"))
+            .Where(match => match.Success)
+            .Select(match => int.TryParse(match.Groups["n"].Value, out var n) ? n : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        return $"YTV-{year}-{max + 1:0000}";
+    }
+
+    private string GetYouTubeProjectFolder()
+    {
+        return Path.Combine(GetPersonalVaultFolder(), "projects", YouTubeProjectSlug);
+    }
+
+    private static string GetYouTubeVideoFolder(string projectFolder, YouTubeVideoContext video)
+    {
+        return Path.Combine(projectFolder, "videos", $"{video.VideoId}_{video.Slug}");
+    }
+
+    private static void EnsureYouTubeVideoFiles(string videoFolder, YouTubeVideoContext video)
+    {
+        WriteIfMissing(Path.Combine(videoFolder, "Video_Brief.md"), BuildYouTubeVideoBriefMarkdown(video));
+        WriteIfMissing(Path.Combine(videoFolder, "Micro_Transformation.md"), $"# Micro Transformation{Environment.NewLine}{Environment.NewLine}{video.MicroTransformation}{Environment.NewLine}");
+        WriteIfMissing(Path.Combine(videoFolder, "Topic_Title_Ideas.md"), "# Topic / Title Ideas" + Environment.NewLine + Environment.NewLine);
+        WriteIfMissing(Path.Combine(videoFolder, "Thumbnail_Ideas.md"), "# Thumbnail Ideas" + Environment.NewLine + Environment.NewLine);
+        WriteIfMissing(Path.Combine(videoFolder, "Intro_Hook_Ideas.md"), "# Intro / Hook Ideas" + Environment.NewLine + Environment.NewLine);
+        WriteIfMissing(Path.Combine(videoFolder, "Body_Micro_Stories.md"), "# Body Micro-Stories" + Environment.NewLine + Environment.NewLine + "Use Setup -> Progress -> Payoff for each body idea." + Environment.NewLine);
+        WriteIfMissing(Path.Combine(videoFolder, "Evidence_To_Check.md"), "# Evidence To Check" + Environment.NewLine + Environment.NewLine);
+        WriteIfMissing(Path.Combine(videoFolder, "VitaMR_Positioning.md"), "# VitaMR Positioning" + Environment.NewLine + Environment.NewLine);
+        WriteIfMissing(Path.Combine(videoFolder, "Raw_Captures.md"), "# Raw Captures" + Environment.NewLine + Environment.NewLine);
+    }
+
+    private static string ResolveYouTubeVideoSectionFile(string normalized)
+    {
+        if (ContainsAny(normalized, "title", "topic", "proven"))
+        {
+            return "Topic_Title_Ideas.md";
+        }
+
+        if (ContainsAny(normalized, "thumbnail", "visual", "image"))
+        {
+            return "Thumbnail_Ideas.md";
+        }
+
+        if (ContainsAny(normalized, "intro", "hook", "opening", "first 15 seconds"))
+        {
+            return "Intro_Hook_Ideas.md";
+        }
+
+        if (ContainsAny(normalized, "setup", "progress", "payoff", "micro story", "body", "core idea"))
+        {
+            return "Body_Micro_Stories.md";
+        }
+
+        if (ContainsAny(normalized, "evidence", "research", "study", "source", "prove", "check"))
+        {
+            return "Evidence_To_Check.md";
+        }
+
+        if (ContainsAny(normalized, "vitamr", "dolly", "software", "tool", "agentic"))
+        {
+            return "VitaMR_Positioning.md";
+        }
+
+        if (ContainsAny(normalized, "micro transformation", "microtransformation", "transformation"))
+        {
+            return "Micro_Transformation.md";
+        }
+
+        return "Video_Brief.md";
+    }
+
+    private static string ResolveYouTubeVideoSectionTitle(string normalized)
+    {
+        return Path.GetFileNameWithoutExtension(ResolveYouTubeVideoSectionFile(normalized)).Replace('_', ' ');
+    }
+
+    private static void AppendMarkdownCapture(string path, string title, PersonalVaultCapture capture)
+    {
+        WriteIfMissing(path, $"# {title}{Environment.NewLine}{Environment.NewLine}");
+        File.AppendAllText(
+            path,
+            $"{Environment.NewLine}## {FormatPersonalVaultDate(capture.CreatedAt)} - {capture.CaptureType.Replace('_', ' ')}{Environment.NewLine}" +
+            $"- Capture: `{capture.CaptureId}`{Environment.NewLine}" +
+            $"- Source: {FirstNonEmpty(capture.DeviceName, "Phone companion")}{Environment.NewLine}" +
+            $"{Environment.NewLine}{capture.Note.Trim()}{Environment.NewLine}");
+    }
+
+    private bool TryBuildYouTubeVideoExport(string note, out string[] lines)
+    {
+        lines = [];
+        var normalized = NormalizeConfirmation(note);
+        if (!ContainsAny(normalized, "export context", "gpt context", "all notes", "give me notes", "video notes", "title ideas", "thumbnail notes", "hook notes", "intro notes", "body micro"))
+        {
+            return false;
+        }
+
+        var projectFolder = EnsureYouTubeProjectFramework();
+        var current = ReadYouTubeVideoContext(Path.Combine(projectFolder, YouTubeCurrentVideoFileName));
+        if (current is null)
+        {
+            lines = ["I do not have an active YouTube video yet. Start by telling me the video idea or micro-transformation, and I will create the active video context."];
+            return true;
+        }
+
+        var videoFolder = GetYouTubeVideoFolder(projectFolder, current);
+        EnsureYouTubeVideoFiles(videoFolder, current);
+        var export = BuildYouTubeVideoContextPack(videoFolder, current, normalized);
+        lines = [export];
+        return true;
+    }
+
+    private static string BuildYouTubeVideoContextPack(string videoFolder, YouTubeVideoContext video, string normalizedRequest)
+    {
+        var requestedFiles = ResolveYouTubeExportFiles(normalizedRequest).ToList();
+        var builder = new StringBuilder();
+        builder.AppendLine($"# GPT Context Pack: {video.VideoId}");
+        builder.AppendLine();
+        builder.AppendLine($"Working title: {video.WorkingTitle}");
+        builder.AppendLine($"Parent project: {video.ParentProject}");
+        builder.AppendLine();
+        builder.AppendLine("## Main Transformation");
+        builder.AppendLine("Increasing life and healthspan.");
+        builder.AppendLine();
+        builder.AppendLine("## Focus");
+        builder.AppendLine("Early detection as a practical longevity lever. VitaMR/Dolly is the primary tool being shared; YouTube is the awareness channel.");
+        builder.AppendLine();
+
+        foreach (var fileName in requestedFiles)
+        {
+            var path = Path.Combine(videoFolder, fileName);
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            builder.AppendLine();
+            builder.AppendLine(File.ReadAllText(path).Trim());
+            builder.AppendLine();
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static IEnumerable<string> ResolveYouTubeExportFiles(string normalizedRequest)
+    {
+        if (ContainsAny(normalizedRequest, "title ideas", "title notes", "topic ideas"))
+        {
+            return ["Video_Brief.md", "Micro_Transformation.md", "Topic_Title_Ideas.md"];
+        }
+
+        if (ContainsAny(normalizedRequest, "thumbnail"))
+        {
+            return ["Video_Brief.md", "Micro_Transformation.md", "Thumbnail_Ideas.md"];
+        }
+
+        if (ContainsAny(normalizedRequest, "intro", "hook"))
+        {
+            return ["Video_Brief.md", "Micro_Transformation.md", "Intro_Hook_Ideas.md"];
+        }
+
+        if (ContainsAny(normalizedRequest, "body", "micro story", "setup", "progress", "payoff"))
+        {
+            return ["Video_Brief.md", "Micro_Transformation.md", "Body_Micro_Stories.md"];
+        }
+
+        return
+        [
+            "Video_Brief.md",
+            "Micro_Transformation.md",
+            "Topic_Title_Ideas.md",
+            "Thumbnail_Ideas.md",
+            "Intro_Hook_Ideas.md",
+            "Body_Micro_Stories.md",
+            "Evidence_To_Check.md",
+            "VitaMR_Positioning.md",
+            "Raw_Captures.md"
+        ];
+    }
+
+    private static void WriteIfMissing(string path, string contents)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+        if (!File.Exists(path))
+        {
+            File.WriteAllText(path, contents);
+        }
+    }
+
+    private static string FormatPersonalVaultDate(string value)
+    {
+        return DateTimeOffset.TryParse(value, out var parsed)
+            ? parsed.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+            : FirstNonEmpty(value, "unknown time");
+    }
+
+    private static string BuildYouTubeProjectIndexMarkdown()
+    {
+        return """
+            # LT Transformation - Early Detection
+
+            ## Overall Transformational Goal
+
+            This optional Personal Vault project template helps a user organize a longevity-focused transformation arc around early detection, health-data visibility, and readiness. It is intentionally generic in the public repo and should be customized locally with synthetic or personal notes only after the user trusts their own environment.
+
+            Current champion topic: early detection as a practical longevity lever.
+
+            Primary tool: VitaMR/Dolly.
+
+            Primary channel: YouTube, to increase awareness of early detection for longevity and introduce VitaMR to interested builders and users.
+
+            Each video is a micro-transformation that should support the larger transformation arc.
+            """;
+    }
+
+    private static string BuildYouTubeProjectStrategyMarkdown()
+    {
+        return """
+            # Strategy
+
+            ## Overall Transformational Goal
+            Use early detection and health-data visibility as a longevity readiness theme. Public builds should treat this as an editable template, not as a claim about any real person.
+
+            ## Focus
+            Champion early detection as an underused longevity lever.
+
+            ## Tool
+            VitaMR/Dolly is an open-source, agent-first medical record prototype for organizing records and user-controlled context.
+
+            ## Main Quest
+            Explore how a user might organize educational content around early detection, health-data visibility, and longevity readiness.
+
+            ## Video Structure
+            Each video should define a micro-transformation, then develop topic/title ideas, thumbnail ideas, intro/hook ideas, and body ideas using micro-stories with Setup, Progress, and Payoff.
+            """;
+    }
+
+    private static string BuildYouTubeVideoBriefMarkdown(YouTubeVideoContext video)
+    {
+        return $"""
+            # Video Brief - {video.VideoId}
+
+            Working title: {video.WorkingTitle}
+
+            Status: {video.Status}
+
+            ## Micro-Transformation
+            {video.MicroTransformation}
+
+            ## Relation To Larger Arc
+            This video should advance the larger transformation: increasing life and healthspan through better early detection, with VitaMR/Dolly as the tool being shared.
+            """;
+    }
+
+    private void RefreshPersonalVault()
+    {
+        var searchText = PersonalVaultSearchText.Trim();
+        var allRows = LoadPersonalVaultRows().ToList();
+        RefreshPersonalVaultTopicFilters(allRows);
+        var selectedTopic = SelectedPersonalVaultTopic;
+        var rows = allRows
+            .Where(row => string.IsNullOrWhiteSpace(searchText) ||
+                          row.Lane.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                          row.Kind.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                          row.TopicHint.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                          row.CaptureType.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                          row.Note.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                          row.DeviceName.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                          row.CreatedAt.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            .Where(row => selectedTopic.Equals("All Topics", StringComparison.OrdinalIgnoreCase) ||
+                          row.TopicHint.Equals(selectedTopic, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(row => ParsePhoneInboxDate(row.CreatedAt))
+            .Take(75)
+            .ToList();
+
+        PersonalVaultItems.Clear();
+        foreach (var row in rows)
+        {
+            PersonalVaultItems.Add(row);
+        }
+
+        var totalCount = allRows.Count;
+        var unwovenCount = GetUnwovenPersonalVaultCaptures().Count;
+        var topicSuffix = selectedTopic.Equals("All Topics", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : $" | topic: {selectedTopic}";
+        var weaveSuffix = $" | {unwovenCount} unwoven | auto-organize at {PersonalVaultWeaveThreshold}";
+        PersonalVaultStatus = totalCount == 0
+            ? "No synced Personal, Lockbox, or Pets notes yet."
+            : string.IsNullOrWhiteSpace(searchText) && selectedTopic.Equals("All Topics", StringComparison.OrdinalIgnoreCase)
+                ? $"{totalCount} synced Personal Vault note(s). Lockbox notes are excluded from cloud AI and wiki weaving.{weaveSuffix}"
+                : $"{PersonalVaultItems.Count} match(es) out of {totalCount} Personal Vault note(s).{topicSuffix}{weaveSuffix}";
+
+        RefreshPreview();
+    }
+
+    private void RefreshPersonalVaultTopicFilters(IReadOnlyList<PersonalVaultItemViewModel> rows)
+    {
+        var topics = rows
+            .Select(row => row.TopicHint)
+            .Where(topic => !string.IsNullOrWhiteSpace(topic))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(topic => topic, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var selected = SelectedPersonalVaultTopic;
+        PersonalVaultTopicFilters.Clear();
+        PersonalVaultTopicFilters.Add("All Topics");
+        foreach (var topic in topics)
+        {
+            PersonalVaultTopicFilters.Add(topic);
+        }
+
+        if (!selected.Equals("All Topics", StringComparison.OrdinalIgnoreCase) &&
+            !topics.Contains(selected, StringComparer.OrdinalIgnoreCase))
+        {
+            _selectedPersonalVaultTopic = "All Topics";
+            OnPropertyChanged(nameof(SelectedPersonalVaultTopic));
+        }
+    }
+
+    private IEnumerable<PersonalVaultItemViewModel> LoadPersonalVaultRows()
+    {
+        var folder = GetPersonalVaultFolder();
+        foreach (var lane in new[] { "personal", "lockbox", "pets" })
+        {
+            var path = Path.Combine(folder, $"{lane}-notes.jsonl");
+            foreach (var document in ReadJsonLines(path))
+            {
+                var root = document.RootElement;
+                var note = ReadJsonString(root, "note");
+                if (string.IsNullOrWhiteSpace(note))
+                {
+                    continue;
+                }
+
+                yield return new PersonalVaultItemViewModel(
+                    lane,
+                    ReadJsonString(root, "kind"),
+                    note,
+                    FirstNonEmpty(ReadJsonString(root, "topicHint"), InferPersonalVaultTopic(lane, ReadJsonString(root, "kind"), note).TopicHint),
+                    FirstNonEmpty(ReadJsonString(root, "captureType"), InferPersonalVaultCaptureType(lane, ReadJsonString(root, "kind"), note)),
+                    FirstNonEmpty(ReadJsonString(root, "createdAt"), ReadJsonString(root, "receivedAt")),
+                    ReadJsonString(root, "receivedAt"),
+                    ReadJsonString(root, "deviceName"));
+            }
+        }
+    }
+
+    private void WeavePersonalVault()
+    {
+        var captures = LoadPersonalVaultCaptures()
+            .Where(ShouldIncludeInPersonalVaultDerivedPages)
+            .ToList();
+        if (captures.Count == 0)
+        {
+            PersonalVaultStatus = "No Personal Vault captures to organize yet.";
+            return;
+        }
+
+        var unwoven = GetUnwovenPersonalVaultCaptures(captures);
+        var batchId = $"PVW-{DateTimeOffset.Now:yyyyMMddHHmmss}";
+        var folder = GetPersonalVaultFolder();
+        var wikiFolder = Path.Combine(folder, "wiki");
+        var timelineFolder = Path.Combine(folder, "timeline");
+        Directory.CreateDirectory(wikiFolder);
+        Directory.CreateDirectory(timelineFolder);
+
+        var groups = captures
+            .GroupBy(capture => string.IsNullOrWhiteSpace(capture.TopicSlug) ? SlugifyPersonalVaultTopic(capture.TopicHint) : capture.TopicSlug, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var group in groups)
+        {
+            var topicCaptures = group
+                .OrderBy(capture => ParsePhoneInboxDate(capture.CreatedAt))
+                .ToList();
+            var title = FirstNonEmpty(topicCaptures.FirstOrDefault()?.TopicHint ?? string.Empty, HumanizePersonalVaultSlug(group.Key));
+            File.WriteAllText(
+                Path.Combine(wikiFolder, $"{group.Key}.md"),
+                BuildPersonalVaultTopicMarkdown(title, topicCaptures));
+        }
+
+        File.WriteAllText(
+            Path.Combine(wikiFolder, "Personal_Index.md"),
+            BuildPersonalVaultIndexMarkdown(groups));
+
+        File.WriteAllText(
+            Path.Combine(wikiFolder, PersonalVaultMemorySummaryFileName),
+            BuildPersonalMemorySummaryMarkdown(captures));
+
+        var monthlyGroups = captures
+            .GroupBy(capture => ToPersonalVaultMonthKey(capture.CreatedAt), StringComparer.OrdinalIgnoreCase)
+            .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var group in monthlyGroups)
+        {
+            File.WriteAllText(
+                Path.Combine(timelineFolder, $"{group.Key}.md"),
+                BuildPersonalVaultMonthMarkdown(group.Key, group
+                    .OrderBy(capture => ParsePhoneInboxDate(capture.CreatedAt))
+                    .ToList()));
+        }
+
+        var yearlyGroups = captures
+            .GroupBy(capture => ToPersonalVaultYearKey(capture.CreatedAt), StringComparer.OrdinalIgnoreCase)
+            .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var group in yearlyGroups)
+        {
+            File.WriteAllText(
+                Path.Combine(timelineFolder, $"{group.Key}.md"),
+                BuildPersonalVaultYearMarkdown(group.Key, group
+                    .OrderBy(capture => ParsePhoneInboxDate(capture.CreatedAt))
+                    .ToList()));
+        }
+
+        File.WriteAllText(
+            Path.Combine(timelineFolder, "Personal_Timeline_Index.md"),
+            BuildPersonalVaultTimelineIndexMarkdown(yearlyGroups, monthlyGroups));
+
+        var batchRecord = JsonSerializer.Serialize(new
+        {
+            batchId,
+            createdAt = DateTimeOffset.Now,
+            captureCount = captures.Count,
+            newlyWovenCount = unwoven.Count,
+            topics = groups.Select(group => group.Key).ToList(),
+            years = yearlyGroups.Select(group => group.Key).ToList(),
+            months = monthlyGroups.Select(group => group.Key).ToList(),
+            captureIds = unwoven.Select(capture => capture.CaptureId).ToList()
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        File.AppendAllLines(Path.Combine(folder, PersonalVaultBatchFileName), [batchRecord]);
+
+        PersonalVaultStatus = $"Organized {captures.Count} Personal Vault capture(s) into {groups.Count} topic page(s), {yearlyGroups.Count} year page(s), and {monthlyGroups.Count} month page(s).";
+        RefreshPersonalVault();
+    }
+
+    public Task<MobilePersonalSummaryResponse> HandleMobilePersonalSummaryAsync(
+        MobileTrustedDevice device,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Application.Current.Dispatcher.CheckAccess())
+        {
+            var operation = Application.Current.Dispatcher.InvokeAsync(
+                () => HandleMobilePersonalSummaryAsync(device, cancellationToken),
+                DispatcherPriority.Normal,
+                cancellationToken);
+            return operation.Task.Unwrap();
+        }
+
+        var summary = RefreshPersonalMemorySummary();
+        return Task.FromResult(new MobilePersonalSummaryResponse
+        {
+            Status = string.IsNullOrWhiteSpace(summary) ? "empty" : "ready",
+            UpdatedAt = DateTimeOffset.Now.ToString("O"),
+            Summary = summary,
+            Message = string.IsNullOrWhiteSpace(summary)
+                ? "No Personal memory summary is available yet."
+                : "Personal memory summary ready for phone Personal Mode."
+        });
+    }
+
+    private string RefreshPersonalMemorySummary()
+    {
+        var captures = LoadPersonalVaultCaptures()
+            .Where(ShouldIncludeInPersonalVaultDerivedPages)
+            .ToList();
+        var summary = BuildPersonalMemorySummaryMarkdown(captures);
+        var wikiFolder = Path.Combine(GetPersonalVaultFolder(), "wiki");
+        Directory.CreateDirectory(wikiFolder);
+        File.WriteAllText(Path.Combine(wikiFolder, PersonalVaultMemorySummaryFileName), summary);
+        return summary;
+    }
+
+    private IReadOnlyList<PersonalVaultCapture> GetUnwovenPersonalVaultCaptures(IReadOnlyList<PersonalVaultCapture>? captures = null)
+    {
+        captures ??= LoadPersonalVaultCaptures().ToList();
+        var processedIds = LoadProcessedPersonalVaultCaptureIds();
+        return captures
+            .Where(ShouldIncludeInPersonalVaultDerivedPages)
+            .Where(capture => !processedIds.Contains(capture.CaptureId))
+            .ToList();
+    }
+
+    private static bool ShouldIncludeInPersonalVaultDerivedPages(PersonalVaultCapture capture)
+    {
+        return !NormalizePersonalVaultLane(capture.Lane).Equals("lockbox", StringComparison.OrdinalIgnoreCase) &&
+            !IsPersonalSessionKind(capture.Kind) &&
+            !capture.CaptureType.Equals("phone_session", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private IReadOnlyList<PersonalVaultCapture> LoadPersonalVaultCaptures()
+    {
+        var folder = GetPersonalVaultFolder();
+        var taggedPath = Path.Combine(folder, PersonalVaultTaggedCaptureFileName);
+        var captures = ReadPersonalVaultCaptureFile(taggedPath).ToList();
+        if (captures.Count > 0)
+        {
+            return captures;
+        }
+
+        return new[] { "personal", "pets" }
+            .SelectMany(lane => ReadPersonalVaultCaptureFile(Path.Combine(folder, $"{lane}-notes.jsonl"), lane))
+            .ToList();
+    }
+
+    private IEnumerable<PersonalVaultCapture> ReadPersonalVaultCaptureFile(string path, string fallbackLane = "personal")
+    {
+        foreach (var document in ReadJsonLines(path))
+        {
+            var root = document.RootElement;
+            var note = ReadJsonString(root, "note");
+            if (string.IsNullOrWhiteSpace(note))
+            {
+                continue;
+            }
+
+            var lane = FirstNonEmpty(ReadJsonString(root, "lane"), fallbackLane);
+            var kind = FirstNonEmpty(ReadJsonString(root, "kind"), lane.Equals("pets", StringComparison.OrdinalIgnoreCase) ? "pet_note" : "personal_text");
+            var topic = InferPersonalVaultTopic(lane, kind, note);
+            yield return new PersonalVaultCapture(
+                FirstNonEmpty(ReadJsonString(root, "captureId"), ReadJsonString(root, "localId"), Guid.NewGuid().ToString("N")),
+                NormalizePersonalVaultLane(lane),
+                kind,
+                note,
+                FirstNonEmpty(ReadJsonString(root, "topicHint"), topic.TopicHint),
+                FirstNonEmpty(ReadJsonString(root, "topicSlug"), topic.TopicSlug),
+                FirstNonEmpty(ReadJsonString(root, "captureType"), InferPersonalVaultCaptureType(lane, kind, note)),
+                FirstNonEmpty(ReadJsonString(root, "createdAt"), ReadJsonString(root, "receivedAt")),
+                ReadJsonString(root, "receivedAt"),
+                ReadJsonString(root, "deviceId"),
+                ReadJsonString(root, "deviceName"));
+        }
+    }
+
+    private HashSet<string> LoadProcessedPersonalVaultCaptureIds()
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var document in ReadJsonLines(Path.Combine(GetPersonalVaultFolder(), PersonalVaultBatchFileName)))
+        {
+            if (!document.RootElement.TryGetProperty("captureIds", out var captureIds) ||
+                captureIds.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var captureId in captureIds.EnumerateArray())
+            {
+                var value = captureId.ToString().Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    ids.Add(value);
+                }
+            }
+        }
+
+        return ids;
+    }
+
+    private static PersonalVaultCapture BuildPersonalVaultCapture(
+        string captureId,
+        string lane,
+        string kind,
+        string note,
+        string createdAt,
+        DateTimeOffset receivedAt,
+        string deviceId,
+        string deviceName)
+    {
+        var normalizedLane = NormalizePersonalVaultLane(lane);
+        var topic = InferPersonalVaultTopic(normalizedLane, kind, note);
+        return new PersonalVaultCapture(
+            captureId,
+            normalizedLane,
+            kind,
+            note,
+            topic.TopicHint,
+            topic.TopicSlug,
+            InferPersonalVaultCaptureType(normalizedLane, kind, note),
+            createdAt,
+            receivedAt.ToString("O"),
+            deviceId,
+            deviceName);
+    }
+
+    private static PersonalVaultTopic InferPersonalVaultTopic(string lane, string kind, string note)
+    {
+        if (NormalizePersonalVaultLane(lane).Equals("pets", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PersonalVaultTopic("Pets", "Pets");
+        }
+
+        if (NormalizePersonalVaultLane(lane).Equals("lockbox", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PersonalVaultTopic("Lockbox", "Lockbox");
+        }
+
+        if (IsPersonalSessionKind(kind))
+        {
+            return new PersonalVaultTopic("Phone Sessions", "Phone_Sessions");
+        }
+
+        var normalized = NormalizeConfirmation(note);
+        var explicitTopic = ExtractExplicitPersonalVaultTopic(note);
+        if (!string.IsNullOrWhiteSpace(explicitTopic))
+        {
+            return new PersonalVaultTopic(explicitTopic, SlugifyPersonalVaultTopic(explicitTopic));
+        }
+
+        if (ContainsAny(normalized, "dolly project", "vitamr", "codex", "personal vault", "data hunter"))
+        {
+            return new PersonalVaultTopic("Dolly Project", "Dolly_Project");
+        }
+
+        if (ContainsAny(normalized, "shopping", "grocery", "groceries", "buy ", "pick up", "store", "order "))
+        {
+            return new PersonalVaultTopic("Shopping List", "Shopping_List");
+        }
+
+        if (ContainsAny(normalized, "youtube", "video idea", "channel", "thumbnail", "script", "shorts"))
+        {
+            return new PersonalVaultTopic("YouTube Ideas", "YouTube_Ideas");
+        }
+
+        if (ContainsAny(normalized, "home", "house", "garage", "clean", "repair", "laundry"))
+        {
+            return new PersonalVaultTopic("Home", "Home");
+        }
+
+        if (ContainsAny(normalized, "plan", "goal", "future", "schedule", "trip", "budget"))
+        {
+            return new PersonalVaultTopic("Life Planning", "Life_Planning");
+        }
+
+        return new PersonalVaultTopic("Inbox", "Inbox");
+    }
+
+    private static string ExtractExplicitPersonalVaultTopic(string note)
+    {
+        var match = Regex.Match(
+            note,
+            @"\b(?:for|about|on|under|to)\s+(?:my\s+)?(?<topic>[A-Za-z][A-Za-z0-9 '&-]{2,40}?)(?:\s+(?:project|list|ideas?|notes?))?(?:[.?!,:;]|$)",
+            RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return string.Empty;
+        }
+
+        var topic = Regex.Replace(match.Groups["topic"].Value, @"\s+", " ").Trim();
+        if (topic.Length < 3 ||
+            ContainsAny(NormalizeConfirmation(topic), "later", "desktop", "phone", "medical mode", "personal mode", "pets mode"))
+        {
+            return string.Empty;
+        }
+
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(topic.ToLowerInvariant());
+    }
+
+    private static string InferPersonalVaultCaptureType(string lane, string kind, string note)
+    {
+        if (NormalizePersonalVaultLane(lane).Equals("pets", StringComparison.OrdinalIgnoreCase))
+        {
+            return "pet_note";
+        }
+
+        if (NormalizePersonalVaultLane(lane).Equals("lockbox", StringComparison.OrdinalIgnoreCase))
+        {
+            return "lockbox_note";
+        }
+
+        if (IsPersonalSessionKind(kind))
+        {
+            return "phone_session";
+        }
+
+        var normalized = NormalizeConfirmation(note);
+        if (ContainsAny(normalized, "buy ", "shopping", "grocery", "groceries", "pick up", "order "))
+        {
+            return "list_item";
+        }
+
+        if (ContainsAny(normalized, "idea", "what if", "could", "maybe", "concept"))
+        {
+            return "idea";
+        }
+
+        if (ContainsAny(normalized, "todo", "to do", "task", "remember to", "need to"))
+        {
+            return "task";
+        }
+
+        if (ContainsAny(normalized, "plan", "goal", "schedule"))
+        {
+            return "plan";
+        }
+
+        return "note";
+    }
+
+    private static bool IsPersonalSessionKind(string kind)
+    {
+        return kind.Equals("personal_session", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksSensitiveForPersonalCloud(string note)
+    {
+        var normalized = NormalizeConfirmation(note);
+        return ContainsAny(
+            normalized,
+            "password",
+            "passcode",
+            "social security",
+            "ssn",
+            "bank account",
+            "credit card",
+            "legal",
+            "lawsuit",
+            "tax",
+            "medical",
+            "diagnosis",
+            "prescription",
+            "private",
+            "secret");
+    }
+
+    private static string ScrubPersonalModeTextForCloud(string note)
+    {
+        var scrubbed = Regex.Replace(note, @"\b\d{3}-\d{2}-\d{4}\b", "[redacted-id]");
+        scrubbed = Regex.Replace(scrubbed, @"\b(?:\d[ -]*?){13,16}\b", "[redacted-card-or-number]");
+        scrubbed = Regex.Replace(scrubbed, @"(?i)\b(password|passcode|pin)\s*[:=]\s*\S+", "$1: [redacted]");
+        return scrubbed.Trim();
+    }
+
+    private static string NormalizePersonalVaultLane(string lane)
+    {
+        return lane.Trim().ToLowerInvariant() switch
+        {
+            "pets" => "pets",
+            "lockbox" => "lockbox",
+            _ => "personal"
+        };
+    }
+
+    private static string SlugifyPersonalVaultTopic(string value)
+    {
+        var cleaned = Regex.Replace(value, @"[^A-Za-z0-9]+", "_").Trim('_');
+        return string.IsNullOrWhiteSpace(cleaned) ? "Inbox" : cleaned;
+    }
+
+    private static string HumanizePersonalVaultSlug(string slug)
+    {
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(slug.Replace('_', ' ').ToLowerInvariant());
+    }
+
+    private static string BuildPersonalVaultTopicMarkdown(string title, IReadOnlyList<PersonalVaultCapture> captures)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("---");
+        builder.AppendLine("document_type: \"Personal_Vault_Topic\"");
+        builder.AppendLine($"topic: \"{EscapeYamlValue(title)}\"");
+        builder.AppendLine($"updated_at: \"{DateTimeOffset.Now:O}\"");
+        builder.AppendLine("medical_chart_evidence: false");
+        builder.AppendLine("---");
+        builder.AppendLine();
+        builder.AppendLine($"# {title}");
+        builder.AppendLine();
+        builder.AppendLine("> Derived from Personal Vault tagged captures. Raw captures remain preserved in JSONL.");
+        builder.AppendLine();
+        foreach (var group in captures.GroupBy(capture => capture.CaptureType).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            builder.AppendLine($"## {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(group.Key.Replace('_', ' '))}");
+            foreach (var capture in group.OrderBy(capture => ParsePhoneInboxDate(capture.CreatedAt)))
+            {
+                builder.AppendLine($"- {capture.CreatedAt}: {capture.Note}");
+            }
+
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildPersonalVaultIndexMarkdown(IReadOnlyList<IGrouping<string, PersonalVaultCapture>> groups)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# Personal Vault Index");
+        builder.AppendLine();
+        builder.AppendLine("> Personal/Pets memory stays outside the medical chart and evidence scoring.");
+        builder.AppendLine();
+        foreach (var group in groups)
+        {
+            var title = FirstNonEmpty(group.FirstOrDefault()?.TopicHint ?? string.Empty, HumanizePersonalVaultSlug(group.Key));
+            builder.AppendLine($"- [[{group.Key}|{title}]] - {group.Count()} capture(s)");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildPersonalMemorySummaryMarkdown(IReadOnlyList<PersonalVaultCapture> captures)
+    {
+        var memoryCaptures = captures
+            .Where(capture => !capture.Lane.Equals("lockbox", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(capture => ParsePhoneInboxDate(capture.CreatedAt))
+            .ToList();
+        var builder = new StringBuilder();
+        builder.AppendLine("---");
+        builder.AppendLine("document_type: \"Personal_Memory_Summary\"");
+        builder.AppendLine($"updated_at: \"{DateTimeOffset.Now:O}\"");
+        builder.AppendLine("medical_chart_evidence: false");
+        builder.AppendLine("---");
+        builder.AppendLine();
+        builder.AppendLine("# Personal Memory Summary");
+        builder.AppendLine();
+        builder.AppendLine("> Phone-safe Personal/Pets memory summary for on-the-go Dolly context. Lockbox and medical chart evidence are excluded.");
+        builder.AppendLine();
+        if (memoryCaptures.Count == 0)
+        {
+            builder.AppendLine("No Personal Vault memory has been synced yet.");
+            return builder.ToString();
+        }
+
+        builder.AppendLine("## Current Topics");
+        foreach (var group in memoryCaptures
+                     .GroupBy(capture => FirstNonEmpty(capture.TopicHint, "Inbox"), StringComparer.OrdinalIgnoreCase)
+                     .OrderByDescending(group => group.Max(capture => ParsePhoneInboxDate(capture.CreatedAt)))
+                     .Take(8))
+        {
+            var latest = group.Max(capture => ParsePhoneInboxDate(capture.CreatedAt));
+            var latestLabel = latest == DateTimeOffset.MinValue
+                ? "unknown date"
+                : latest.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            builder.AppendLine($"- {group.Key}: {group.Count()} capture(s), latest {latestLabel}.");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## Recent Memory");
+        foreach (var capture in memoryCaptures.Take(12))
+        {
+            var date = ParsePhoneInboxDate(capture.CreatedAt);
+            var dateLabel = date == DateTimeOffset.MinValue
+                ? FirstNonEmpty(capture.CreatedAt, "unknown date")
+                : date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            builder.AppendLine($"- {dateLabel} | {capture.TopicHint} | {capture.CaptureType.Replace('_', ' ')}: {TruncateForChronos(capture.Note, 220)}");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildPersonalVaultTimelineIndexMarkdown(
+        IReadOnlyList<IGrouping<string, PersonalVaultCapture>> yearlyGroups,
+        IReadOnlyList<IGrouping<string, PersonalVaultCapture>> monthlyGroups)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# Personal Timeline Index");
+        builder.AppendLine();
+        builder.AppendLine("> Derived from Personal Vault tagged captures. Lockbox notes are excluded from this timeline.");
+        builder.AppendLine();
+        builder.AppendLine("## Years");
+        foreach (var group in yearlyGroups)
+        {
+            builder.AppendLine($"- [[{group.Key}|{group.Key}]] - {group.Count()} capture(s)");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## Months");
+        foreach (var group in monthlyGroups)
+        {
+            builder.AppendLine($"- [[{group.Key}|{HumanizePersonalVaultMonthKey(group.Key)}]] - {group.Count()} capture(s)");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildPersonalVaultYearMarkdown(string yearKey, IReadOnlyList<PersonalVaultCapture> captures)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("---");
+        builder.AppendLine("document_type: \"Personal_Vault_Timeline_Year\"");
+        builder.AppendLine($"year: \"{EscapeYamlValue(yearKey)}\"");
+        builder.AppendLine($"updated_at: \"{DateTimeOffset.Now:O}\"");
+        builder.AppendLine("medical_chart_evidence: false");
+        builder.AppendLine("---");
+        builder.AppendLine();
+        builder.AppendLine($"# Personal Timeline - {yearKey}");
+        builder.AppendLine();
+        builder.AppendLine("> Date-bounded Personal/Pets context only. Raw captures remain preserved in JSONL.");
+        builder.AppendLine();
+        foreach (var group in captures.GroupBy(capture => ToPersonalVaultMonthKey(capture.CreatedAt)).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            builder.AppendLine($"## {HumanizePersonalVaultMonthKey(group.Key)}");
+            AppendPersonalVaultTimelineRows(builder, group.OrderBy(capture => ParsePhoneInboxDate(capture.CreatedAt)));
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildPersonalVaultMonthMarkdown(string monthKey, IReadOnlyList<PersonalVaultCapture> captures)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("---");
+        builder.AppendLine("document_type: \"Personal_Vault_Timeline_Month\"");
+        builder.AppendLine($"month: \"{EscapeYamlValue(monthKey)}\"");
+        builder.AppendLine($"updated_at: \"{DateTimeOffset.Now:O}\"");
+        builder.AppendLine("medical_chart_evidence: false");
+        builder.AppendLine("---");
+        builder.AppendLine();
+        builder.AppendLine($"# Personal Timeline - {HumanizePersonalVaultMonthKey(monthKey)}");
+        builder.AppendLine();
+        builder.AppendLine("> Date-bounded Personal/Pets context only. Raw captures remain preserved in JSONL.");
+        builder.AppendLine();
+        foreach (var group in captures.GroupBy(capture => capture.TopicHint).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            builder.AppendLine($"## {FirstNonEmpty(group.Key, "Inbox")}");
+            AppendPersonalVaultTimelineRows(builder, group.OrderBy(capture => ParsePhoneInboxDate(capture.CreatedAt)));
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static void AppendPersonalVaultTimelineRows(StringBuilder builder, IEnumerable<PersonalVaultCapture> captures)
+    {
+        foreach (var capture in captures)
+        {
+            var date = ParsePhoneInboxDate(capture.CreatedAt);
+            var dateLabel = date == DateTimeOffset.MinValue
+                ? FirstNonEmpty(capture.CreatedAt, "unknown date")
+                : date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            builder.AppendLine($"- {dateLabel} | {capture.TopicHint} | {capture.CaptureType.Replace('_', ' ')}: {capture.Note}");
+        }
+    }
+
+    private static string ToPersonalVaultYearKey(string createdAt)
+    {
+        var date = ParsePhoneInboxDate(createdAt);
+        return date == DateTimeOffset.MinValue ? string.Empty : date.ToString("yyyy", CultureInfo.InvariantCulture);
+    }
+
+    private static string ToPersonalVaultMonthKey(string createdAt)
+    {
+        var date = ParsePhoneInboxDate(createdAt);
+        return date == DateTimeOffset.MinValue ? string.Empty : date.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+    }
+
+    private static string HumanizePersonalVaultMonthKey(string monthKey)
+    {
+        return DateTimeOffset.TryParseExact(
+            $"{monthKey}-01",
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeLocal,
+            out var date)
+            ? date.ToString("MMMM yyyy", CultureInfo.InvariantCulture)
+            : monthKey;
+    }
+
+    private static string EscapeYamlValue(string value)
+    {
+        return (value ?? string.Empty).Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+    }
+
     private void RefreshPhoneInbox()
     {
         var actionStatuses = LoadPhoneInboxActionStatuses();
@@ -5080,6 +6475,11 @@ public sealed class MainWindowViewModel : ObservableObject
     private static string GetMobileAppDataFolder()
     {
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VitaMR");
+    }
+
+    private static string GetPersonalVaultFolder()
+    {
+        return Path.Combine(GetMobileAppDataFolder(), "PersonalVault");
     }
 
     private void HandlePhoneInboxAction(object? parameter)
@@ -5305,6 +6705,74 @@ public sealed class MainWindowViewModel : ObservableObject
             AgentLabel,
             "healthspan_mode");
         VaultWriteStatus = "Healthspan mode updated";
+    }
+
+    private void ApplyLifeMode(string? mode)
+    {
+        var normalized = NormalizeLifeMode(mode);
+        if (_settings.ActiveLifeMode == normalized)
+        {
+            return;
+        }
+
+        _settings.ActiveLifeMode = normalized;
+        _settingsService.Save(_settings);
+        OnLifeModeChanged();
+        _chronosLedgerService.RecordEvent(
+            VaultRootPath,
+            GetActiveChart(),
+            "life_mode_changed",
+            $"{normalized} Mode selected. {ActiveLifeModeDetail}",
+            AgentLabel,
+            "life_mode");
+        VaultWriteStatus = $"{normalized} Mode active";
+    }
+
+    public Task<MobileLifeModeResponse> HandleMobileLifeModeAsync(
+        MobileLifeModeRequest request,
+        MobileTrustedDevice device,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Application.Current.Dispatcher.CheckAccess())
+        {
+            var operation = Application.Current.Dispatcher.InvokeAsync(
+                () => HandleMobileLifeModeAsync(request, device, cancellationToken),
+                DispatcherPriority.Normal,
+                cancellationToken);
+            return operation.Task.Unwrap();
+        }
+
+        ApplyLifeMode(request.Mode);
+        var mode = ActiveLifeMode;
+
+        return Task.FromResult(new MobileLifeModeResponse
+        {
+            Status = "life_mode_synced",
+            Mode = mode,
+            Message = $"Desktop switched to {mode} Mode."
+        });
+    }
+
+    private void OnLifeModeChanged()
+    {
+        OnPropertyChanged(nameof(ActiveLifeMode));
+        OnPropertyChanged(nameof(IsMedicalLifeModeSelected));
+        OnPropertyChanged(nameof(IsPersonalLifeModeSelected));
+        OnPropertyChanged(nameof(IsLockboxLifeModeSelected));
+        OnPropertyChanged(nameof(IsPetsLifeModeSelected));
+        OnPropertyChanged(nameof(ActiveLifeModeDetail));
+        RefreshPreview();
+    }
+
+    private static string NormalizeLifeMode(string? mode)
+    {
+        return mode?.Trim().ToLowerInvariant() switch
+        {
+            "personal" => "Personal",
+            "lockbox" or "secret" or "secret mode" or "local lockbox" => "Lockbox",
+            "pets" => "Pets",
+            _ => "Medical"
+        };
     }
 
     private bool TryHandleHealthspanMotivationLadder(string userText, out IReadOnlyList<string> responseLines)
@@ -7795,10 +9263,10 @@ public sealed class MainWindowViewModel : ObservableObject
             : _settings.GeminiThinkingModelName.Trim();
         _settings.SelectedAiProvider = NormalizeProviderDisplayName(_settings.SelectedAiProvider);
         _settings.ChartManagerName = string.IsNullOrWhiteSpace(_settings.ChartManagerName)
-            ? (string.IsNullOrWhiteSpace(_settings.VaultOwnerName) ? "Local Owner" : _settings.VaultOwnerName.Trim())
+            ? (string.IsNullOrWhiteSpace(_settings.VaultOwnerName) ? "Vault Manager" : _settings.VaultOwnerName.Trim())
             : _settings.ChartManagerName.Trim();
         _settings.ChartManagerPassword = string.IsNullOrWhiteSpace(_settings.ChartManagerPassword)
-            ? (string.IsNullOrWhiteSpace(_settings.VaultOwnerDeletePassword) ? "CHANGE_ME" : _settings.VaultOwnerDeletePassword.Trim())
+            ? (string.IsNullOrWhiteSpace(_settings.VaultOwnerDeletePassword) ? "Vault Manager" : _settings.VaultOwnerDeletePassword.Trim())
             : _settings.ChartManagerPassword.Trim();
         _settingsService.Save(_settings);
         _vaultIngestService.VaultRoot = _settings.VaultRootPath;
@@ -7886,6 +9354,8 @@ public sealed class MainWindowViewModel : ObservableObject
         PreviewLines.Add($"Model route: {SelectedModel}");
         PreviewLines.Add(HealthspanModeSummary);
         PreviewLines.Add(HealthspanModeDetail);
+        PreviewLines.Add($"Life mode: {ActiveLifeMode}");
+        PreviewLines.Add(ActiveLifeModeDetail);
         PreviewLines.Add(VitaMasterySummary);
         PreviewLines.Add($"Vita Mastery quests: {VitaMasteryMicroQuestSummary}");
         PreviewLines.Add("Local privacy check: required");
@@ -7896,6 +9366,7 @@ public sealed class MainWindowViewModel : ObservableObject
         PreviewLines.Add($"Typed characters: {PromptText.Length}");
         PreviewLines.Add($"Attachments queued: {Attachments.Count}");
         PreviewLines.Add($"Phone inbox: {PhoneInboxItems.Count} item(s)");
+        PreviewLines.Add($"Personal Vault: {PersonalVaultItems.Count} visible item(s)");
         PreviewLines.Add(LocalScrubberStatus);
         PreviewLines.Add(PayloadStatus);
         PreviewLines.Add(VaultWriteStatus);
@@ -10588,7 +12059,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private string BuildChartManagerCreatePhrase()
     {
         var password = string.IsNullOrWhiteSpace(_settings.ChartManagerPassword)
-            ? "CHANGE_ME"
+            ? "Vault Manager"
             : _settings.ChartManagerPassword.Trim();
 
         return $"{password} CREATE CHART";
@@ -10597,7 +12068,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private string BuildChartManagerDeletePhrase(string patientDisplayName)
     {
         var password = string.IsNullOrWhiteSpace(_settings.ChartManagerPassword)
-            ? "CHANGE_ME"
+            ? "Vault Manager"
             : _settings.ChartManagerPassword.Trim();
 
         return $"{password} DELETE {patientDisplayName}";
@@ -10606,7 +12077,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private string BuildChartManagerPendingDeletePhrase()
     {
         var password = string.IsNullOrWhiteSpace(_settings.ChartManagerPassword)
-            ? "CHANGE_ME"
+            ? "Vault Manager"
             : _settings.ChartManagerPassword.Trim();
 
         return $"{password} DELETE";
@@ -10647,7 +12118,7 @@ public sealed class MainWindowViewModel : ObservableObject
             $"Patient: {patient.PatientDisplayName}{Environment.NewLine}" +
             $"DOB: {FormatKnownOrMissing(patient.DateOfBirth)}{Environment.NewLine}" +
             $"Chart ID: {patient.ChartId}{Environment.NewLine}" +
-            $"Moved by vault owner: {FirstNonEmpty(_settings.VaultOwnerName, "Local Owner")}{Environment.NewLine}" +
+            $"Moved by vault owner: Vault Manager{Environment.NewLine}" +
             $"Moved at: {DateTime.Now:O}{Environment.NewLine}" +
             $"Purge eligible after: {DateTime.Now.AddDays(7):yyyy-MM-dd}{Environment.NewLine}");
 
@@ -12356,7 +13827,7 @@ public sealed class MainWindowViewModel : ObservableObject
         return ChartSwitchResolution.Clarify(
             [
                 "I can switch charts, but I could not match that to one patient yet.",
-                "Try saying the patient name, like Open Bruce."
+                "Try saying the patient name, like Open Sharon or Switch to Bruce."
             ]);
     }
 
@@ -13779,7 +15250,7 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         return string.IsNullOrWhiteSpace(_settings.VaultOwnerName)
-            ? "Local Owner"
+            ? "Vault Manager"
             : _settings.VaultOwnerName;
     }
 
@@ -13926,7 +15397,7 @@ public sealed class MainWindowViewModel : ObservableObject
         var timeline = ExtractMarkdownTableRows(workingSummaryContext, "## Recent Timeline", 4);
         var lines = new List<string>();
 
-        lines.Add("From the active chart's sterile working summary, the high-level picture is:");
+        lines.Add("From Bruce's sterile working summary, the high-level picture is:");
         lines.AddRange(diagnoses.Select(row => $"- Condition: {row}"));
         lines.AddRange(meds.Select(row => $"- Medication: {row}"));
         lines.AddRange(gaps.Take(3).Select(row => $"- Open item: {row}"));
@@ -13969,8 +15440,8 @@ public sealed class MainWindowViewModel : ObservableObject
         var paragraphs = new List<string>
         {
             conditions.Count == 0
-                ? "From the active chart's working summary, I have some chart context, but not enough clean detail to give a strong overview while the upload is still running."
-                : $"From the active chart's working summary, the main picture is {JoinHumanList(conditions)}."
+                ? "From Bruce's working summary, I have some chart context, but not enough clean detail to give a strong overview while the upload is still running."
+                : $"From Bruce's working summary, the main picture is {JoinHumanList(conditions)}."
         };
 
         if (medications.Count > 0)
@@ -14564,6 +16035,108 @@ public sealed class MainWindowViewModel : ObservableObject
             get => _masterHuntHint;
             set => SetProperty(ref _masterHuntHint, value ?? string.Empty);
         }
+    }
+
+    public sealed class PersonalVaultItemViewModel
+    {
+        public PersonalVaultItemViewModel(
+            string lane,
+            string kind,
+            string note,
+            string topicHint,
+            string captureType,
+            string createdAt,
+            string receivedAt,
+            string deviceName)
+        {
+            Lane = string.IsNullOrWhiteSpace(lane) ? "personal" : lane.Trim();
+            Kind = string.IsNullOrWhiteSpace(kind)
+                ? Lane.ToLowerInvariant() switch
+                {
+                    "pets" => "pet_note",
+                    "lockbox" => "lockbox_note",
+                    _ => "personal_text"
+                }
+                : kind.Trim();
+            Note = note;
+            TopicHint = string.IsNullOrWhiteSpace(topicHint) ? "Inbox" : topicHint.Trim();
+            CaptureType = string.IsNullOrWhiteSpace(captureType) ? "note" : captureType.Trim();
+            CreatedAt = string.IsNullOrWhiteSpace(createdAt) ? "unknown time" : createdAt.Trim();
+            ReceivedAt = string.IsNullOrWhiteSpace(receivedAt) ? string.Empty : receivedAt.Trim();
+            DeviceName = string.IsNullOrWhiteSpace(deviceName) ? "Phone companion" : deviceName.Trim();
+        }
+
+        public string Lane { get; }
+
+        public string Kind { get; }
+
+        public string Note { get; }
+
+        public string TopicHint { get; }
+
+        public string CaptureType { get; }
+
+        public string CreatedAt { get; }
+
+        public string ReceivedAt { get; }
+
+        public string DeviceName { get; }
+
+        public string Title => Lane.ToLowerInvariant() switch
+        {
+            "pets" => "Pet note",
+            "lockbox" => "Lockbox note",
+            _ when IsPersonalSessionKind(Kind) => "Phone session snapshot",
+            _ => "Personal note"
+        };
+
+        public string Detail => $"{DeviceName} - {CreatedAt}";
+
+        public string TopicDetail => $"{TopicHint} - {CaptureType.Replace('_', ' ')}";
+
+        public string Boundary => Lane.ToLowerInvariant() switch
+        {
+            "pets" => "Pets lane: animal/pet context, not a human medical chart.",
+            "lockbox" => "Lockbox lane: sensitive local/trusted-host note; excluded from Gemini and wiki weaving.",
+            _ when IsPersonalSessionKind(Kind) => "Personal lane: phone sync history; excluded from derived wiki and timeline pages.",
+            _ => "Personal lane: separate from medical chart evidence."
+        };
+    }
+
+    private sealed record PersonalVaultTopic(
+        string TopicHint,
+        string TopicSlug);
+
+    private sealed record PersonalVaultCapture(
+        string CaptureId,
+        string Lane,
+        string Kind,
+        string Note,
+        string TopicHint,
+        string TopicSlug,
+        string CaptureType,
+        string CreatedAt,
+        string ReceivedAt,
+        string DeviceId,
+        string DeviceName);
+
+    private sealed class YouTubeVideoContext
+    {
+        public string VideoId { get; set; } = string.Empty;
+
+        public string Slug { get; set; } = string.Empty;
+
+        public string WorkingTitle { get; set; } = string.Empty;
+
+        public string Status { get; set; } = "active";
+
+        public string CreatedAt { get; set; } = string.Empty;
+
+        public string LastTouchedAt { get; set; } = string.Empty;
+
+        public string ParentProject { get; set; } = YouTubeProjectSlug;
+
+        public string MicroTransformation { get; set; } = string.Empty;
     }
 
     public sealed class VitaMasteryQuestRowViewModel

@@ -11,6 +11,8 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.biometric.BiometricManager
@@ -83,6 +85,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -103,15 +106,30 @@ import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.net.URL
+import java.net.URLEncoder
+import java.security.KeyStore
 import java.time.OffsetDateTime
 import java.time.LocalTime
 import java.util.Base64
 import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 private const val PrefsName = "vitamr_mobile"
 private const val MaxCaptureDimension = 1000
 private const val RequestCameraCapture = 1001
 private const val RequestPhotoPicker = 1002
+private const val PersonalGeminiModel = "gemini-2.5-flash-lite"
+private const val PersonalGeminiKeyAlias = "vitamr_personal_gemini_api_key"
+private const val PersonalGeminiEncryptedPref = "personal_gemini_api_key_encrypted"
+private const val PersonalGeminiLegacyPref = "personal_gemini_api_key"
+private const val PersonalCloudCooldownPref = "personal_cloud_cooldown_until_ms"
+private const val PersonalCloudCooldownSeconds = 60L
+private const val PersonalThreadBriefPref = "personal_thread_brief"
+private const val PersonalThreadTopicPref = "personal_thread_topic"
+private const val PersonalThreadGoalPref = "personal_thread_goal"
 
 class MainActivity : FragmentActivity() {
     private var pendingCameraUri: Uri? = null
@@ -202,6 +220,11 @@ class MainActivity : FragmentActivity() {
 
 data class ChatMessage(val author: String, val text: String)
 
+class GeminiHttpException(
+    val code: Int,
+    message: String
+) : IllegalStateException(message)
+
 data class ChartRow(val chartId: String, val displayName: String, val isActive: Boolean)
 
 data class ChatResult(
@@ -211,7 +234,19 @@ data class ChatResult(
     val packet: ChartPacket?
 )
 
-data class HealthResult(val message: String, val activeChartId: String, val activePatientDisplayName: String)
+data class HealthResult(
+    val message: String,
+    val activeChartId: String,
+    val activePatientDisplayName: String,
+    val activeLifeMode: String
+)
+
+data class PersonalSummaryResult(
+    val status: String,
+    val updatedAt: String,
+    val summary: String,
+    val message: String
+)
 
 data class ChartPhotoResult(
     val status: String,
@@ -316,7 +351,141 @@ class VitaMRClient(private val context: Context) {
         get() = prefs.getBoolean("manager_biometric_enabled", false)
         set(value) = prefs.edit().putBoolean("manager_biometric_enabled", value).apply()
 
+    var personalCloudEnabled: Boolean
+        get() = prefs.getBoolean("personal_cloud_enabled", false)
+        set(value) = prefs.edit().putBoolean("personal_cloud_enabled", value).apply()
+
+    private var personalGeminiApiKey: String
+        get() {
+            val encrypted = prefs.getString(PersonalGeminiEncryptedPref, "") ?: ""
+            if (encrypted.isNotBlank()) {
+                return decryptPersonalGeminiKey(encrypted).orEmpty()
+            }
+
+            val legacy = prefs.getString(PersonalGeminiLegacyPref, "")?.trim().orEmpty()
+            if (legacy.isNotBlank()) {
+                personalGeminiApiKey = legacy
+            }
+            return legacy
+        }
+        set(value) {
+            val trimmed = value.trim()
+            val editor = prefs.edit().remove(PersonalGeminiLegacyPref)
+            if (trimmed.isBlank()) {
+                editor.remove(PersonalGeminiEncryptedPref).apply()
+            } else {
+                editor.putString(PersonalGeminiEncryptedPref, encryptPersonalGeminiKey(trimmed)).apply()
+            }
+        }
+
     fun isPaired(): Boolean = token.isNotBlank()
+
+    fun hasPersonalGeminiKey(): Boolean = personalGeminiApiKey.isNotBlank()
+
+    fun savePersonalGeminiKey(value: String) {
+        personalGeminiApiKey = value
+    }
+
+    fun clearPersonalGeminiKey() {
+        personalGeminiApiKey = ""
+    }
+
+    fun personalCloudLabel(): String =
+        when {
+            !personalCloudEnabled -> "Personal Cloud: off"
+            !hasPersonalGeminiKey() -> "Personal Cloud: Gemini key needed"
+            else -> "Personal Cloud: Gemini Flash-Lite"
+        }
+
+    private var personalCloudCooldownUntilMs: Long
+        get() = prefs.getLong(PersonalCloudCooldownPref, 0L)
+        set(value) = prefs.edit().putLong(PersonalCloudCooldownPref, value).apply()
+
+    private fun personalCloudCooldownRemainingSeconds(): Long {
+        val remainingMs = personalCloudCooldownUntilMs - System.currentTimeMillis()
+        return if (remainingMs <= 0L) 0L else (remainingMs + 999L) / 1000L
+    }
+
+    private fun startPersonalCloudCooldown(seconds: Long = PersonalCloudCooldownSeconds) {
+        personalCloudCooldownUntilMs = System.currentTimeMillis() + seconds * 1000L
+    }
+
+    private fun personalCloudCoolingDownReply(seconds: Long): String =
+        "Saved to Personal Mode. Personal Cloud is busy right now, so I paused Gemini for about $seconds second${if (seconds == 1L) "" else "s"}. Please wait a little and try the next reply after that. I will keep syncing your saved notes to the host when available."
+
+    var personalThreadBrief: String
+        get() = prefs.getString(PersonalThreadBriefPref, "") ?: ""
+        set(value) = prefs.edit().putString(PersonalThreadBriefPref, value.take(900)).apply()
+
+    private var personalThreadTopic: String
+        get() = prefs.getString(PersonalThreadTopicPref, "") ?: ""
+        set(value) = prefs.edit().putString(PersonalThreadTopicPref, value.take(80)).apply()
+
+    private var personalThreadGoal: String
+        get() = prefs.getString(PersonalThreadGoalPref, "") ?: ""
+        set(value) = prefs.edit().putString(PersonalThreadGoalPref, value.take(180)).apply()
+
+    fun updatePersonalThreadBrief(userNote: String, dollyReply: String) {
+        val topic = inferPersonalThreadTopic(userNote).ifBlank { personalThreadTopic.ifBlank { "Personal planning" } }
+        val goal = inferPersonalThreadGoal(userNote).ifBlank { personalThreadGoal.ifBlank { userNote.take(160) } }
+        personalThreadTopic = topic
+        personalThreadGoal = goal
+        personalThreadBrief = buildString {
+            appendLine("Topic: $topic")
+            appendLine("Current goal: ${goal.take(180)}")
+            appendLine("Latest user point: ${userNote.trim().take(240)}")
+            val conciseReply = dollyReply
+                .lineSequence()
+                .firstOrNull { it.isNotBlank() }
+                ?.take(180)
+                .orEmpty()
+            if (conciseReply.isNotBlank()) {
+                appendLine("Latest Dolly response: $conciseReply")
+            }
+        }.trim()
+    }
+
+    private fun encryptPersonalGeminiKey(value: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreatePersonalGeminiSecretKey())
+        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        val iv = Base64.getEncoder().encodeToString(cipher.iv)
+        val payload = Base64.getEncoder().encodeToString(encrypted)
+        return "$iv:$payload"
+    }
+
+    private fun decryptPersonalGeminiKey(value: String): String? {
+        return runCatching {
+            val parts = value.split(":", limit = 2)
+            if (parts.size != 2) return@runCatching null
+            val iv = Base64.getDecoder().decode(parts[0])
+            val payload = Base64.getDecoder().decode(parts[1])
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, getOrCreatePersonalGeminiSecretKey(), GCMParameterSpec(128, iv))
+            String(cipher.doFinal(payload), Charsets.UTF_8)
+        }.getOrNull()
+    }
+
+    private fun getOrCreatePersonalGeminiSecretKey(): SecretKey {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (keyStore.getKey(PersonalGeminiKeyAlias, null) as? SecretKey)?.let { return it }
+
+        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        val keySpec = KeyGenParameterSpec.Builder(
+            PersonalGeminiKeyAlias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setRandomizedEncryptionRequired(true)
+            .build()
+        keyGenerator.init(keySpec)
+        return keyGenerator.generateKey()
+    }
+
+    var personalMemorySummary: String
+        get() = prefs.getString("personal_memory_summary", "") ?: ""
+        set(value) = prefs.edit().putString("personal_memory_summary", value.take(6000)).apply()
 
     fun wirelessDebuggingEnabled(): Boolean? {
         return runCatching {
@@ -329,6 +498,7 @@ class VitaMRClient(private val context: Context) {
             return HealthResult(
                 "Not connected: phone is not on Wi-Fi. Join the same Wi-Fi as VitaMR desktop.",
                 "",
+                "",
                 ""
             )
         }
@@ -337,15 +507,27 @@ class VitaMRClient(private val context: Context) {
             val response = getJson("/mobile/health")
             val chartId = response.optString("activeChartId")
             val patientName = response.optString("activePatientDisplayName")
+            val lifeMode = normalizeLifeMode(response.optString("activeLifeMode", "Medical"))
             val message = when {
                 !isPaired() -> "Connected to VitaMR desktop. Pair this phone to chat."
                 patientName.isBlank() -> "Connected. Dolly is ready."
                 else -> "Connected. Dolly ready: $patientName."
             }
-            HealthResult(message, chartId, patientName)
+            HealthResult(message, chartId, patientName, lifeMode)
         } catch (exception: Exception) {
-            HealthResult(describeConnectionProblem(exception), "", "")
+            HealthResult(describeConnectionProblem(exception), "", "", "")
         }
+    }
+
+    fun canUseDesktopNetwork(): Boolean = isOnWifi()
+
+    suspend fun lifeMode(mode: String): String {
+        val response = postJson(
+            "/mobile/life-mode",
+            JSONObject().put("mode", normalizeLifeMode(mode)),
+            authenticated = true
+        )
+        return normalizeLifeMode(response.optString("mode", mode))
     }
 
     suspend fun startPairing(): String = postJson("/mobile/pair/start", JSONObject()).getString("pairingCode")
@@ -381,6 +563,93 @@ class VitaMRClient(private val context: Context) {
         )
     }
 
+    suspend fun personalChat(message: String, localId: String, createdAt: String): ChatResult {
+        val body = JSONObject()
+            .put("message", message)
+            .put("localId", localId)
+            .put("createdAt", createdAt)
+        val response = postJson("/mobile/personal-chat", body, authenticated = true)
+        return ChatResult(
+            response.optString("reply", "Saved to Personal Mode."),
+            response.optString("activeChartId"),
+            response.optString("activePatientDisplayName"),
+            response.optJSONObject("packet")?.toChartPacket()
+        )
+    }
+
+    suspend fun personalCloudChat(message: String, fallbackConversationContext: String): String {
+        if (!personalCloudEnabled) {
+            return "Personal Cloud is off. Turn it on in Settings if you want an interactive Dolly reply on the go."
+        }
+
+        val apiKey = personalGeminiApiKey
+        if (apiKey.isBlank()) {
+            return "Add a Personal Gemini key in Settings to use interactive Dolly on the go."
+        }
+
+        val cooldownSeconds = personalCloudCooldownRemainingSeconds()
+        if (cooldownSeconds > 0L) {
+            return personalCloudCoolingDownReply(cooldownSeconds)
+        }
+
+        val scrubbedMessage = scrubPersonalCloudText(message)
+        val scrubbedBrief = scrubPersonalCloudText(personalThreadBrief).take(900)
+        val scrubbedContext = if (scrubbedBrief.isBlank()) {
+            scrubPersonalCloudText(fallbackConversationContext).take(900)
+        } else {
+            ""
+        }
+        val prompt =
+            "You are Dolly in VitaMR Personal Mode on the user's phone.\n" +
+            "User profile: The user is building VitaMR/Dolly, a longevity-first medical-record sovereignty project. The user prefers concise, practical brainstorming with continuity. Personal Mode is non-sensitive and is not medical evidence.\n" +
+            "Safety: Do not use or request medical chart context. Do not diagnose, triage, prescribe, handle legal/financial/password/identity secrets, or claim this is evidence.\n" +
+            "The latest user message has already been saved locally on the phone. Reply concisely and ask one useful follow-up question when helpful.\n\n" +
+            if (scrubbedBrief.isNotBlank()) {
+                "Current thread brief:\n$scrubbedBrief\n\n"
+            } else {
+                "Recent Personal conversation:\n$scrubbedContext\n\n"
+            } +
+                "Latest user note:\n$scrubbedMessage"
+        val body = JSONObject()
+            .put(
+                "contents",
+                JSONArray().put(
+                    JSONObject().put(
+                        "parts",
+                        JSONArray().put(JSONObject().put("text", prompt))
+                    )
+                )
+            )
+            .put(
+                "generationConfig",
+                JSONObject()
+                    .put("temperature", 0.45)
+                    .put("maxOutputTokens", 220)
+            )
+        val url =
+            "https://generativelanguage.googleapis.com/v1beta/models/$PersonalGeminiModel:generateContent?key=" +
+                URLEncoder.encode(apiKey, Charsets.UTF_8.name())
+        val response = try {
+            postAbsoluteJson(url, body)
+        } catch (exception: GeminiHttpException) {
+            if (exception.code == 429 || exception.code == 503) {
+                startPersonalCloudCooldown()
+                return personalCloudCoolingDownReply(PersonalCloudCooldownSeconds)
+            }
+            throw exception
+        }
+        return response
+            .optJSONArray("candidates")
+            ?.optJSONObject(0)
+            ?.optJSONObject("content")
+            ?.optJSONArray("parts")
+            ?.optJSONObject(0)
+            ?.optString("text")
+            ?.trim()
+            ?.ifBlank { null }
+            ?: "Saved to Personal Mode. Gemini did not return a useful reply, but your note stayed saved."
+    }
+
     suspend fun chartPacket(chartId: String, packetType: String, mode: String = "current"): ChartPacket {
         val body = JSONObject()
             .put("chartId", chartId)
@@ -402,6 +671,16 @@ class VitaMRClient(private val context: Context) {
             response.optString("activeChartId"),
             response.optString("activePatientDisplayName"),
             response.optJSONObject("packet")?.toChartPacket()
+        )
+    }
+
+    suspend fun personalSummary(): PersonalSummaryResult {
+        val response = getJson("/mobile/personal-summary", authenticated = true)
+        return PersonalSummaryResult(
+            response.optString("status"),
+            response.optString("updatedAt"),
+            response.optString("summary"),
+            response.optString("message")
         )
     }
 
@@ -475,6 +754,29 @@ class VitaMRClient(private val context: Context) {
     }
 
     suspend fun sendOfflineItem(item: OfflineItem): OfflineSyncResult {
+        if (item.kind == "personal_text" ||
+            item.kind == "personal_session" ||
+            item.kind == "pet_note" ||
+            item.kind == "lockbox_note"
+        ) {
+            val body = JSONObject()
+                .put("localId", item.localId)
+                .put("createdAt", item.createdAt)
+                .put("kind", item.kind)
+                .put("note", item.note)
+            val response = postJson("/mobile/personal-item", body, authenticated = true)
+            val fallbackStatus = when (item.kind) {
+                "pet_note" -> "pet_vault_synced"
+                "lockbox_note" -> "lockbox_vault_synced"
+                else -> "personal_vault_synced"
+            }
+            return OfflineSyncResult(
+                response.optString("status", fallbackStatus),
+                response.optString("message", "Saved to desktop Personal Vault."),
+                ""
+            )
+        }
+
         if (item.fileUri.isNotBlank()) {
             val message = captureStoredFile(item)
             return OfflineSyncResult(
@@ -583,6 +885,27 @@ class VitaMRClient(private val context: Context) {
 
     private suspend fun postJson(path: String, body: JSONObject, authenticated: Boolean = false): JSONObject =
         request("POST", path, body, authenticated)
+
+    private suspend fun postAbsoluteJson(url: String, body: JSONObject): JSONObject =
+        withContext(Dispatchers.IO) {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 45000
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.doOutput = true
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+            val text = BufferedReader(InputStreamReader(stream)).use { it.readText() }
+            if (connection.responseCode !in 200..299) {
+                val error = runCatching { JSONObject(text).optJSONObject("error") }.getOrNull()
+                val message = error?.optString("message")?.ifBlank { null }
+                    ?: runCatching { JSONObject(text).optString("error") }.getOrNull()?.ifBlank { null }
+                    ?: "Gemini HTTP ${connection.responseCode}"
+                throw GeminiHttpException(connection.responseCode, message)
+            }
+            JSONObject(text)
+        }
 
     private suspend fun request(method: String, path: String, body: JSONObject?, authenticated: Boolean): JSONObject =
         withContext(Dispatchers.IO) {
@@ -835,6 +1158,119 @@ private fun buildWelcomeMessage(patientName: String): String {
     return "$greeting, $name. I have ${patientName.trim().ifBlank { "your" }}'s chart open.\n\nWhat would you like to do first: ask a chart question, add a note, send a photo, or keep building the Data Hunter map?"
 }
 
+private fun looksHealthRelated(text: String): Boolean {
+    val normalized = text.lowercase()
+    return listOf(
+        "ache",
+        "allergy",
+        "blood",
+        "doctor",
+        "dose",
+        "er ",
+        "fever",
+        "headache",
+        "hospital",
+        "hurt",
+        "lab",
+        "med",
+        "pain",
+        "prescription",
+        "rash",
+        "sick",
+        "sleep",
+        "surgery",
+        "symptom",
+        "vaccine"
+    ).any { normalized.contains(it) }
+}
+
+private fun scrubPersonalCloudText(text: String): String {
+    var scrubbed = Regex("""\b\d{3}-\d{2}-\d{4}\b""").replace(text, "[redacted-id]")
+    scrubbed = Regex("""\b(?:\d[ -]*?){13,16}\b""").replace(scrubbed, "[redacted-card-or-number]")
+    scrubbed = Regex("""(?i)\b(password|passcode|pin)\s*[:=]\s*\S+""").replace(scrubbed, "$1: [redacted]")
+    return scrubbed.trim()
+}
+
+private fun inferPersonalThreadTopic(note: String): String {
+    val lower = note.lowercase()
+    return when {
+        listOf("youtube", "video", "thumbnail", "title", "channel", "story").any { lower.contains(it) } -> "YouTube project"
+        listOf("vitamr", "dolly", "app", "software", "agentic").any { lower.contains(it) } -> "VitaMR project"
+        listOf("early detection", "prevention", "longevity", "healthspan").any { lower.contains(it) } -> "Early detection and longevity"
+        listOf("shopping", "buy", "store", "list").any { lower.contains(it) } -> "Shopping list"
+        listOf("schedule", "appointment", "calendar", "remind").any { lower.contains(it) } -> "Planning and reminders"
+        else -> extractPersonalTopicPhrase(note)
+    }
+}
+
+private fun inferPersonalThreadGoal(note: String): String {
+    return note
+        .trim()
+        .replace(Regex("""\s+"""), " ")
+        .take(180)
+}
+
+private fun extractPersonalTopicPhrase(note: String): String {
+    val stopWords = setOf("that", "this", "with", "from", "have", "want", "need", "about", "into", "here", "there")
+    val words = note
+        .replace(Regex("""[^\p{L}\p{N}\s]"""), " ")
+        .split(Regex("""\s+"""))
+        .filter { it.length > 3 }
+        .filterNot { it.lowercase() in stopWords }
+        .take(4)
+    return if (words.isEmpty()) "Personal planning" else words.joinToString(" ").replaceFirstChar { it.uppercase() }
+}
+
+private fun buildPersonalConversationContext(messages: List<ChatMessage>): String =
+    messages
+        .takeLast(8)
+        .joinToString("\n") { message ->
+            "${message.author}: ${message.text.take(380)}"
+        }
+        .take(1800)
+
+private fun buildPersonalSessionSummary(messages: List<ChatMessage>, reason: String): String {
+    val recent = messages
+        .takeLast(16)
+        .filter { it.text.isNotBlank() }
+    val userLines = recent
+        .filter { it.author == "You" }
+        .map { "- ${it.text.take(220)}" }
+        .takeLast(8)
+    val dollyLines = recent
+        .filter { it.author == "Dolly" }
+        .map { "- ${it.text.take(220)}" }
+        .takeLast(6)
+    return buildString {
+        appendLine("Personal Mode session summary synced because $reason.")
+        appendLine()
+        appendLine("## User ideas and requests")
+        if (userLines.isEmpty()) {
+            appendLine("- No user Personal messages captured in this session window.")
+        } else {
+            userLines.forEach { appendLine(it) }
+        }
+        appendLine()
+        appendLine("## Dolly responses and follow-ups")
+        if (dollyLines.isEmpty()) {
+            appendLine("- No Dolly Personal replies captured in this session window.")
+        } else {
+            dollyLines.forEach { appendLine(it) }
+        }
+        appendLine()
+        appendLine("## Raw recent Personal conversation")
+        appendLine(buildPersonalConversationContext(recent))
+    }
+}
+
+private fun normalizeLifeMode(mode: String): String =
+    when (mode.trim().lowercase()) {
+        "personal" -> "Personal"
+        "lockbox", "secret", "secret mode", "local lockbox" -> "Lockbox"
+        "pets" -> "Pets"
+        else -> "Medical"
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VitaMRApp() {
@@ -869,13 +1305,29 @@ fun VitaMRApp() {
     var selectedRecord by remember { mutableStateOf<ChartPacket?>(null) }
     var biometricEnabled by remember { mutableStateOf(client.biometricEnabled) }
     var biometricUnlocked by remember { mutableStateOf(!client.biometricEnabled) }
+    var personalCloudEnabled by remember { mutableStateOf(client.personalCloudEnabled) }
+    var personalGeminiKeyConfigured by remember { mutableStateOf(client.hasPersonalGeminiKey()) }
+    var personalGeminiKeyInput by remember { mutableStateOf("") }
+    var personalCloudStatus by remember { mutableStateOf(client.personalCloudLabel()) }
+    var personalMemorySummaryStatus by remember {
+        mutableStateOf(
+            if (client.personalMemorySummary.isBlank()) {
+                "Personal memory summary not synced yet."
+            } else {
+                "Personal memory summary cached on phone."
+            }
+        )
+    }
     var wirelessDebuggingEnabled by remember { mutableStateOf(client.wirelessDebuggingEnabled()) }
     var dataHunterXpPop by remember { mutableStateOf<DataHunterXpPop?>(null) }
     var showDataHunterQuickActions by remember { mutableStateOf(false) }
     var healthspanModeEnabled by remember { mutableStateOf(false) }
     var healthspanIntensity by remember { mutableStateOf("Support") }
     var showHealthspanIntensityChoices by remember { mutableStateOf(false) }
+    var activeLifeMode by remember { mutableStateOf("Medical") }
     var activeChartPhoto by remember { mutableStateOf<Bitmap?>(null) }
+    var hostDetected by remember { mutableStateOf(false) }
+    var lastPersonalHostSnapshotSignature by remember { mutableStateOf("") }
 
     fun showDollyWelcomeForChart(chartId: String, patientName: String) {
         if (chartId.isBlank() || patientName.isBlank() || welcomedChartId == chartId) {
@@ -908,8 +1360,21 @@ fun VitaMRApp() {
         client.saveChartPackets(chartPackets.values)
     }
 
+    fun refreshPersonalCloudStatus() {
+        personalCloudEnabled = client.personalCloudEnabled
+        personalGeminiKeyConfigured = client.hasPersonalGeminiKey()
+        personalCloudStatus = client.personalCloudLabel()
+    }
+
     fun persistCharts() {
         client.saveCharts(charts.toList())
+    }
+
+    fun markHostDetected(health: HealthResult): Boolean {
+        val detected = health.activeLifeMode.isNotBlank()
+        val becameReachable = detected && !hostDetected
+        hostDetected = detected
+        return becameReachable
     }
 
     fun refreshVitaMastery(chartId: String) {
@@ -1006,6 +1471,168 @@ fun VitaMRApp() {
         persistOfflineItems()
     }
 
+    fun saveLocalPersonalItem(note: String, kind: String = "personal_text"): OfflineItem {
+        val item = OfflineItem(
+            localId = UUID.randomUUID().toString(),
+            createdAt = OffsetDateTime.now().toString(),
+            chartId = "",
+            patientDisplayName = "Personal",
+            kind = kind,
+            note = note,
+            status = "local_only"
+        )
+        offlineItems += item
+        persistOfflineItems()
+        return item
+    }
+
+    fun setLifeMode(mode: String, syncDesktop: Boolean = true, announce: Boolean = true) {
+        val normalizedMode = normalizeLifeMode(mode)
+        activeLifeMode = normalizedMode
+        showDataHunterQuickActions = false
+        showHealthspanIntensityChoices = false
+        if (syncDesktop && client.isPaired()) {
+            scope.launch {
+                runCatching { client.lifeMode(normalizedMode) }
+                    .onSuccess { activeLifeMode = it }
+            }
+        }
+        if (!announce) return
+        val reply = when (normalizedMode) {
+            "Personal" ->
+                "Personal Mode is on.\n\nUse this for non-sensitive ideas, tasks, shopping lists, projects, work notes, YouTube ideas, and ordinary life capture. ${client.personalCloudLabel()}. Do not enter sensitive medical, financial, legal, password, identity, or deeply private information here; use Local Lockbox for that."
+            "Lockbox" ->
+                "Local Lockbox is on.\n\nUse this for sensitive personal notes. I will save them locally and sync only to the trusted desktop when connected. I will not send Lockbox notes to Gemini or the medical chart."
+            "Pets" ->
+                "Pets Mode is on.\n\nPet notes are treated as animal records, not human medical charts. Start with a pet's name and species, then add vet records, vaccine notes, meds, boarding info, or questions for the vet."
+            else ->
+                "Medical Mode is on.\n\nI will treat messages as chart-related context for the active medical record. Personal notes should stay in Personal Mode unless you ask me to switch."
+        }
+        messages += ChatMessage("Dolly", reply)
+    }
+
+    fun handlePersonalOrPetMessage(text: String): Boolean {
+        if (text.isBlank()) return false
+        if (activeLifeMode == "Personal") {
+            val item = saveLocalPersonalItem(text)
+            val healthHint = if (looksHealthRelated(text)) {
+                "\n\nThis may be health-related. I saved it only in Personal Mode for now; switch to Medical Mode when you want to review it as pending medical context."
+            } else {
+                ""
+            }
+            val conversationContext = buildPersonalConversationContext(messages)
+            fun syncPersonalNoteToDesktop() {
+                if (!client.isPaired() || !client.canUseDesktopNetwork()) return
+                scope.launch {
+                    runCatching { client.sendOfflineItem(item) }
+                        .onSuccess { result ->
+                            val index = offlineItems.indexOfFirst { it.localId == item.localId }
+                            if (index >= 0) {
+                                offlineItems[index] = item.copy(status = result.status.ifBlank { "personal_vault_synced" })
+                                persistOfflineItems()
+                            }
+                            status = result.message.ifBlank { "Personal note synced to desktop." }
+                        }
+                }
+            }
+
+            fun answerWithPhoneGemini() {
+                if (!client.personalCloudEnabled || !client.hasPersonalGeminiKey()) {
+                    messages += ChatMessage(
+                        "Dolly",
+                        "Saved to Personal Mode. Turn on Personal Cloud and save a Personal Gemini key in Settings for interactive Dolly replies on the go.$healthHint"
+                    )
+                    status = "Saved personal note locally."
+                    return
+                }
+
+                scope.launch {
+                    isDollyThinking = true
+                    runCatching { client.personalCloudChat(text, conversationContext) }
+                        .onSuccess { reply ->
+                            client.updatePersonalThreadBrief(text, reply)
+                            messages += ChatMessage("Dolly", "$reply$healthHint")
+                            status = "Personal Cloud reply from Gemini Flash-Lite."
+                            syncPersonalNoteToDesktop()
+                        }
+                        .onFailure { exception ->
+                            client.updatePersonalThreadBrief(text, "Personal Cloud could not answer yet.")
+                            messages += ChatMessage(
+                                "Dolly",
+                                "Saved to Personal Mode locally. Personal Cloud could not answer: ${exception.message ?: "Gemini was not reachable."}$healthHint"
+                            )
+                            status = "Saved personal note locally."
+                        }
+                    isDollyThinking = false
+                }
+            }
+
+            if (hostDetected && client.isPaired() && client.canUseDesktopNetwork()) {
+                scope.launch {
+                    isDollyThinking = true
+                    runCatching { client.personalChat(text, item.localId, item.createdAt) }
+                        .onSuccess { chatResult ->
+                            val index = offlineItems.indexOfFirst { it.localId == item.localId }
+                            if (index >= 0) {
+                                offlineItems[index] = item.copy(status = "personal_vault_synced")
+                                persistOfflineItems()
+                            }
+                            messages += ChatMessage("Dolly", "${chatResult.reply}$healthHint")
+                            status = "Saved to desktop Personal Vault."
+                        }
+                        .onFailure {
+                            answerWithPhoneGemini()
+                        }
+                    isDollyThinking = false
+                }
+            } else if (client.personalCloudEnabled && client.hasPersonalGeminiKey()) {
+                answerWithPhoneGemini()
+            } else {
+                answerWithPhoneGemini()
+            }
+            status = "Saved personal note locally."
+            return true
+        }
+
+        if (activeLifeMode == "Lockbox") {
+            val item = saveLocalPersonalItem(text, "lockbox_note")
+            if (client.isPaired()) {
+                scope.launch {
+                    runCatching { client.sendOfflineItem(item) }
+                        .onSuccess { result ->
+                            val index = offlineItems.indexOfFirst { it.localId == item.localId }
+                            if (index >= 0) {
+                                offlineItems[index] = item.copy(status = result.status.ifBlank { "lockbox_vault_synced" })
+                                persistOfflineItems()
+                            }
+                            messages += ChatMessage("Dolly", result.message.ifBlank { "Saved to Lockbox on the trusted desktop. No Gemini call was made." })
+                            status = "Saved Lockbox note to trusted desktop."
+                        }
+                        .onFailure {
+                            messages += ChatMessage("Dolly", "Saved to Local Lockbox on this phone. No Gemini call was made.")
+                            status = "Saved Lockbox note locally."
+                        }
+                }
+            } else {
+                messages += ChatMessage("Dolly", "Saved to Local Lockbox on this phone. No Gemini call was made.")
+            }
+            status = "Saved Lockbox note locally."
+            return true
+        }
+
+        if (activeLifeMode == "Pets") {
+            saveLocalPersonalItem(text, "pet_note")
+            messages += ChatMessage(
+                "Dolly",
+                "Saved to Pets Mode. I will treat this as animal/pet context, not a human chart. For a new pet, include name and species when you can."
+            )
+            status = "Saved pet note locally."
+            return true
+        }
+
+        return false
+    }
+
     fun closesDataHunterQuestControls(text: String): Boolean {
         val normalized = text.trim().lowercase()
         return normalized == "later" ||
@@ -1017,7 +1644,9 @@ fun VitaMRApp() {
     }
 
     fun sendQuickChat(text: String) {
-        if (text.isBlank() || selectedChartId.isBlank()) return
+        if (text.isBlank()) return
+        if (handlePersonalOrPetMessage(text)) return
+        if (selectedChartId.isBlank()) return
         if (closesDataHunterQuestControls(text)) {
             showDataHunterQuickActions = false
         }
@@ -1083,7 +1712,9 @@ fun VitaMRApp() {
     fun syncPendingOfflineItems() {
         if (!client.isPaired()) return
         val pending = offlineItems.filter {
-            it.status == "pending" || (it.kind == "text" && it.status == "synced")
+            it.status == "pending" ||
+                it.status == "local_only" ||
+                (it.kind == "text" && it.status == "synced")
         }
         if (pending.isEmpty()) return
 
@@ -1108,6 +1739,74 @@ fun VitaMRApp() {
                 status = "Sent $synced saved phone item${if (synced == 1) "" else "s"}."
             }
         }
+    }
+
+    fun syncPersonalConversationSnapshotToHost(reason: String = "host detected") {
+        if (!client.isPaired() || !client.canUseDesktopNetwork()) return
+        val conversation = buildPersonalConversationContext(messages)
+        if (conversation.isBlank() || conversation == lastPersonalHostSnapshotSignature) return
+        lastPersonalHostSnapshotSignature = conversation
+        val item = OfflineItem(
+            localId = UUID.randomUUID().toString(),
+            createdAt = OffsetDateTime.now().toString(),
+            chartId = "",
+            patientDisplayName = "Personal",
+            kind = "personal_session",
+            note = buildPersonalSessionSummary(messages, reason),
+            status = "local_only"
+        )
+        offlineItems += item
+        persistOfflineItems()
+        scope.launch {
+            runCatching { client.sendOfflineItem(item) }
+                .onSuccess { result ->
+                    val index = offlineItems.indexOfFirst { it.localId == item.localId }
+                    if (index >= 0) {
+                        offlineItems[index] = item.copy(status = result.status.ifBlank { "personal_vault_synced" })
+                        persistOfflineItems()
+                    }
+                    status = "Host detected. Personal conversation synced to desktop."
+                }
+        }
+    }
+
+    fun syncPersonalMemorySummaryFromHost() {
+        if (!client.isPaired() || !client.canUseDesktopNetwork()) return
+        scope.launch {
+            runCatching { client.personalSummary() }
+                .onSuccess { result ->
+                    if (result.summary.isNotBlank()) {
+                        client.personalMemorySummary = result.summary
+                        personalMemorySummaryStatus = "Personal memory summary synced from host."
+                        status = personalMemorySummaryStatus
+                    }
+                }
+                .onFailure {
+                    personalMemorySummaryStatus = "Personal memory summary could not sync from host."
+                }
+        }
+    }
+
+    fun announceHostDetectedAndSync(reason: String = "host detected") {
+        val pendingCount = offlineItems.count {
+            it.status == "pending" ||
+                it.status == "local_only" ||
+                (it.kind == "text" && it.status == "synced")
+        }
+        val note = if (pendingCount > 0) {
+            "We are now connected to the host, and your saved phone data is being synced."
+        } else {
+            "We are now connected to the host. Dolly will use the trusted desktop for Personal replies and sync."
+        }
+        messages += ChatMessage("Dolly", note)
+        status = if (pendingCount > 0) {
+            "Host detected. Syncing saved phone data."
+        } else {
+            "Host detected. Personal host route ready."
+        }
+        syncPendingOfflineItems()
+        syncPersonalConversationSnapshotToHost(reason)
+        syncPersonalMemorySummaryFromHost()
     }
 
     fun syncChartForTravel(chart: ChartRow) {
@@ -1197,18 +1896,26 @@ fun VitaMRApp() {
         scope.launch {
             status = runCatching {
                 val health = client.health()
+                val becameReachable = markHostDetected(health)
                 if (health.activeChartId.isNotBlank()) {
                     selectedChartId = health.activeChartId
                 }
                 if (health.activePatientDisplayName.isNotBlank()) {
                     selectedChartName = health.activePatientDisplayName
                 }
+                if (health.activeLifeMode.isNotBlank()) {
+                    setLifeMode(health.activeLifeMode, syncDesktop = false, announce = false)
+                }
                 refreshVitaMastery(health.activeChartId)
                 refreshChartPhoto(health.activeChartId)
                 if (client.isPaired() && health.activePatientDisplayName.isNotBlank()) {
                     showDollyWelcomeForChart(health.activeChartId, health.activePatientDisplayName)
                 }
-                syncPendingOfflineItems()
+                if (becameReachable) {
+                    announceHostDetectedAndSync("app start")
+                } else {
+                    syncPendingOfflineItems()
+                }
                 if (health.activeChartId.isBlank() && charts.isNotEmpty()) {
                     "Offline chart cache ready."
                 } else {
@@ -1220,6 +1927,23 @@ fun VitaMRApp() {
 
     LaunchedEffect(selectedChartId) {
         refreshChartPhoto(selectedChartId)
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (client.isPaired()) {
+                runCatching { client.health() }.onSuccess { health ->
+                    val becameReachable = markHostDetected(health)
+                    if (health.activeLifeMode.isNotBlank()) {
+                        setLifeMode(health.activeLifeMode, syncDesktop = false, announce = false)
+                    }
+                    if (becameReachable) {
+                        announceHostDetectedAndSync()
+                    }
+                }
+            }
+            delay(5000)
+        }
     }
 
     LaunchedEffect(selectedTab) {
@@ -1467,9 +2191,17 @@ fun VitaMRApp() {
                         showDataHunterQuickActions = showDataHunterQuickActions,
                         healthspanModeEnabled = healthspanModeEnabled,
                         healthspanIntensity = healthspanIntensity,
+                        activeLifeMode = activeLifeMode,
+                        personalCloudStatus = personalCloudStatus,
+                        personalMemorySummaryStatus = personalMemorySummaryStatus,
+                        hostDetected = hostDetected,
                         showHealthspanIntensityChoices = showHealthspanIntensityChoices,
                         onRecordsMode = { setPhoneHealthspanMode(false) },
                         onHealthspanMode = { setPhoneHealthspanMode(true) },
+                        onMedicalMode = { setLifeMode("Medical") },
+                        onPersonalMode = { setLifeMode("Personal") },
+                        onLockboxMode = { setLifeMode("Lockbox") },
+                        onPetsMode = { setLifeMode("Pets") },
                         onHealthspanIntensity = { setPhoneHealthspanIntensity(it) },
                         isDollyThinking = isDollyThinking,
                         input = input,
@@ -1481,6 +2213,22 @@ fun VitaMRApp() {
                             if (closesDataHunterQuestControls(text)) {
                                 showDataHunterQuickActions = false
                             }
+                            if (activeLifeMode != "Medical" && attachmentsToSend.isNotEmpty()) {
+                                messages += ChatMessage(
+                                    "You",
+                                    if (text.isBlank()) "Tried to send attachment" else "$text (${attachmentsToSend.size} attachment${if (attachmentsToSend.size == 1) "" else "s"})"
+                                )
+                                if (text.isNotBlank()) {
+                                    handlePersonalOrPetMessage(text)
+                                    input = ""
+                                }
+                                messages += ChatMessage(
+                                    "Dolly",
+                                    "I did not send the attachment. Phone attachments still route to the medical inbox, so switch to Medical Mode before sending files or photos."
+                                )
+                                status = "Attachment held. Switch to Medical Mode to send."
+                                return@ChatScreen
+                            }
                             val attachmentLine = if (attachmentsToSend.isEmpty()) {
                                 ""
                             } else {
@@ -1489,6 +2237,9 @@ fun VitaMRApp() {
                             messages += ChatMessage("You", if (text.isBlank()) "Sent attachment$attachmentLine" else "$text$attachmentLine")
                             input = ""
                             pendingAttachments.clear()
+                            if (text.isNotBlank() && attachmentsToSend.isEmpty() && handlePersonalOrPetMessage(text)) {
+                                return@ChatScreen
+                            }
                             scope.launch {
                                 isDollyThinking = true
                                 if (text.isNotBlank()) {
@@ -1829,13 +2580,21 @@ fun VitaMRApp() {
                                 status = "Checking VitaMR desktop..."
                                 status = runCatching {
                                     val health = client.health()
+                                    val becameReachable = markHostDetected(health)
                                     selectedChartId = health.activeChartId
                                     selectedChartName = health.activePatientDisplayName
+                                    if (health.activeLifeMode.isNotBlank()) {
+                                        setLifeMode(health.activeLifeMode, syncDesktop = false, announce = false)
+                                    }
                                     refreshVitaMastery(health.activeChartId)
                                     if (client.isPaired() && health.activePatientDisplayName.isNotBlank()) {
                                         showDollyWelcomeForChart(health.activeChartId, health.activePatientDisplayName)
                                     }
-                                    syncPendingOfflineItems()
+                                    if (becameReachable) {
+                                        announceHostDetectedAndSync("manual refresh")
+                                    } else {
+                                        syncPendingOfflineItems()
+                                    }
                                     health.message
                                 }.getOrElse { "Not connected: ${it.message}" }
                             }
@@ -1856,13 +2615,17 @@ fun VitaMRApp() {
                                         refreshVitaMastery(it.chartId)
                                         showDollyWelcomeForChart(it.chartId, it.displayName)
                                     }
-                                    syncPendingOfflineItems()
+                                    announceHostDetectedAndSync("pairing completed")
                                     "Paired"
                                 }.getOrElse { "Pair failed: ${it.message}" }
                             }
                         },
                         isPaired = client.isPaired(),
                         biometricEnabled = biometricEnabled,
+                        personalCloudEnabled = personalCloudEnabled,
+                        personalGeminiKeyConfigured = personalGeminiKeyConfigured,
+                        personalGeminiKeyInput = personalGeminiKeyInput,
+                        personalCloudStatus = personalCloudStatus,
                         wirelessDebuggingEnabled = wirelessDebuggingEnabled,
                         onEnableBiometric = {
                             (context as? FragmentActivity)?.requestVitaMRBiometric(
@@ -1883,6 +2646,24 @@ fun VitaMRApp() {
                             biometricEnabled = false
                             biometricUnlocked = true
                             status = "Manager biometric unlock disabled."
+                        },
+                        onPersonalGeminiKeyChange = { personalGeminiKeyInput = it },
+                        onSavePersonalGeminiKey = {
+                            client.savePersonalGeminiKey(personalGeminiKeyInput)
+                            personalGeminiKeyInput = ""
+                            refreshPersonalCloudStatus()
+                            status = "Personal Gemini key saved on this phone."
+                        },
+                        onClearPersonalGeminiKey = {
+                            client.clearPersonalGeminiKey()
+                            personalGeminiKeyInput = ""
+                            refreshPersonalCloudStatus()
+                            status = "Personal Gemini key cleared from this phone."
+                        },
+                        onTogglePersonalCloud = {
+                            client.personalCloudEnabled = !client.personalCloudEnabled
+                            refreshPersonalCloudStatus()
+                            status = client.personalCloudLabel()
                         },
                         onRefreshWirelessDebugging = {
                             status = when (refreshWirelessDebuggingState()) {
@@ -1957,9 +2738,17 @@ fun ChatScreen(
     showDataHunterQuickActions: Boolean,
     healthspanModeEnabled: Boolean,
     healthspanIntensity: String,
+    activeLifeMode: String,
+    personalCloudStatus: String,
+    personalMemorySummaryStatus: String,
+    hostDetected: Boolean,
     showHealthspanIntensityChoices: Boolean,
     onRecordsMode: () -> Unit,
     onHealthspanMode: () -> Unit,
+    onMedicalMode: () -> Unit,
+    onPersonalMode: () -> Unit,
+    onLockboxMode: () -> Unit,
+    onPetsMode: () -> Unit,
     onHealthspanIntensity: (String) -> Unit,
     isDollyThinking: Boolean,
     input: String,
@@ -1987,10 +2776,36 @@ fun ChatScreen(
             onDataHunterClick = onDataHunterTap,
             healthspanModeEnabled = healthspanModeEnabled,
             healthspanIntensity = healthspanIntensity,
+            activeLifeMode = activeLifeMode,
             onRecords = onRecordsMode,
-            onHealthspan = onHealthspanMode
+            onHealthspan = onHealthspanMode,
+            onMedical = onMedicalMode,
+            onPersonal = onPersonalMode,
+            onLockbox = onLockboxMode,
+            onPets = onPetsMode
         )
         Spacer(Modifier.height(8.dp))
+        if (activeLifeMode == "Personal") {
+            val routeStatus = if (hostDetected) {
+                "Personal Host: desktop Dolly detected. Replies and sync prefer host."
+            } else {
+                "$personalCloudStatus. Non-sensitive Personal notes only."
+            }
+            Surface(
+                color = if (hostDetected) Color(0xFFE6FAF4) else if (personalCloudStatus.contains("Flash-Lite")) Color(0xFFEFEAFF) else Color(0xFFFFF6DD),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "$routeStatus $personalMemorySummaryStatus",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF3E365A)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         LazyColumn(
             Modifier.weight(1f),
             state = listState,
@@ -2374,8 +3189,13 @@ fun CompactHuntModeStrip(
     onDataHunterClick: () -> Unit,
     healthspanModeEnabled: Boolean,
     healthspanIntensity: String,
+    activeLifeMode: String,
     onRecords: () -> Unit,
-    onHealthspan: () -> Unit
+    onHealthspan: () -> Unit,
+    onMedical: () -> Unit,
+    onPersonal: () -> Unit,
+    onLockbox: () -> Unit,
+    onPets: () -> Unit
 ) {
     LaunchedEffect(xpPop?.id) {
         val pop = xpPop ?: return@LaunchedEffect
@@ -2389,7 +3209,7 @@ fun CompactHuntModeStrip(
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.fillMaxWidth().height(66.dp)) {
+        Column(Modifier.fillMaxWidth().height(104.dp)) {
         Row(
             Modifier.padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -2440,8 +3260,72 @@ fun CompactHuntModeStrip(
         }
         DataHunterMiniProgressLine(
             percent = vitaMastery?.dataHunterPercent ?: 0,
+            modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 6.dp)
+        )
+        LifeModeToggle(
+            activeMode = activeLifeMode,
+            onMedical = onMedical,
+            onPersonal = onPersonal,
+            onLockbox = onLockbox,
+            onPets = onPets,
             modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 8.dp)
         )
+        }
+    }
+}
+
+@Composable
+fun LifeModeToggle(
+    activeMode: String,
+    onMedical: () -> Unit,
+    onPersonal: () -> Unit,
+    onLockbox: () -> Unit,
+    onPets: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = Color(0xFFFFF7F3),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF0D2C7)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(Modifier.padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
+            CompactModeSegment(
+                label = "Medical",
+                selected = activeMode == "Medical",
+                onClick = onMedical,
+                modifier = Modifier.weight(1f),
+                selectedColor = Color(0xFFFFD1C7),
+                selectedTextColor = Color(0xFF4F1F18),
+                unselectedTextColor = Color(0xFF6B4A45)
+            )
+            CompactModeSegment(
+                label = "Personal",
+                selected = activeMode == "Personal",
+                onClick = onPersonal,
+                modifier = Modifier.weight(1f),
+                selectedColor = Color(0xFFDED7FF),
+                selectedTextColor = Color(0xFF30245F),
+                unselectedTextColor = Color(0xFF554A72)
+            )
+            CompactModeSegment(
+                label = "Lockbox",
+                selected = activeMode == "Lockbox",
+                onClick = onLockbox,
+                modifier = Modifier.weight(1f),
+                selectedColor = Color(0xFFD7E6F7),
+                selectedTextColor = Color(0xFF1D3F63),
+                unselectedTextColor = Color(0xFF24405F)
+            )
+            CompactModeSegment(
+                label = "Pets",
+                selected = activeMode == "Pets",
+                onClick = onPets,
+                modifier = Modifier.weight(1f),
+                selectedColor = Color(0xFFFFE2A8),
+                selectedTextColor = Color(0xFF4C3308),
+                unselectedTextColor = Color(0xFF67512A)
+            )
         }
     }
 }
@@ -2505,10 +3389,13 @@ fun CompactModeSegment(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     starColor: Color = Color.Transparent,
-    showStar: Boolean = false
+    showStar: Boolean = false,
+    selectedColor: Color = Color(0xFFA7F2EA),
+    selectedTextColor: Color = Color(0xFF063B32),
+    unselectedTextColor: Color = Color(0xFF52635E)
 ) {
     Surface(
-        color = if (selected) Color(0xFFA7F2EA) else Color.Transparent,
+        color = if (selected) selectedColor else Color.Transparent,
         shape = RoundedCornerShape(8.dp),
         shadowElevation = if (selected) 2.dp else 0.dp,
         modifier = modifier
@@ -2523,7 +3410,7 @@ fun CompactModeSegment(
                 label,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                color = if (selected) Color(0xFF063B32) else Color(0xFF52635E)
+                color = if (selected) selectedTextColor else unselectedTextColor
             )
             if (showStar) {
                 Surface(
@@ -3180,8 +4067,18 @@ fun SavedScreen(
     onSyncNow: () -> Unit,
     onDelete: (OfflineItem) -> Unit
 ) {
-    val pendingItems = offlineItems.count { it.status == "pending" }
-    val syncedItems = offlineItems.count { it.status == "synced" || it.status == "sent_to_dolly" }
+    val localNotes = offlineItems.filter {
+        it.status == "local_only" ||
+            it.status == "personal_vault_synced" ||
+            it.status == "lockbox_vault_synced" ||
+            it.status == "pet_vault_synced"
+    }
+    val syncItems = offlineItems.filter { item -> localNotes.none { it.localId == item.localId } }
+    val personalNotes = localNotes.filter { it.kind == "personal_text" }
+    val lockboxNotes = localNotes.filter { it.kind == "lockbox_note" }
+    val petNotes = localNotes.filter { it.kind == "pet_note" }
+    val pendingItems = syncItems.count { it.status == "pending" }
+    val syncedItems = syncItems.count { it.status == "synced" || it.status == "sent_to_dolly" }
     val patientCount = savedPackets
         .map { it.patientDisplayName.ifBlank { it.chartId } }
         .filter { it.isNotBlank() }
@@ -3202,7 +4099,7 @@ fun SavedScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Saved for later", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("Notes go back to Dolly. Photos and files go to desktop review.")
+                    Text("Medical outbox syncs to desktop. Personal, Lockbox, and pet notes stay in separate lanes.")
                 }
                 Button(onClick = onSyncNow) { Text("Sync now") }
             }
@@ -3219,11 +4116,63 @@ fun SavedScreen(
                     Text("$patientCount patient${if (patientCount == 1) "" else "s"} with offline chart records.")
                     Text("${savedPackets.size} saved chart record${if (savedPackets.size == 1) "" else "s"} on this phone.")
                     Text("$pendingItems phone item${if (pendingItems == 1) "" else "s"} waiting to sync.")
+                    Text("${localNotes.size} personal/lockbox/pet note${if (localNotes.size == 1) "" else "s"} kept separate.")
                     if (syncedItems > 0) {
                         Text("$syncedItems phone item${if (syncedItems == 1) "" else "s"} already sent.")
                     }
                     Text(freshnessLine, fontWeight = FontWeight.SemiBold)
                 }
+            }
+        }
+
+        if (personalNotes.isNotEmpty()) {
+            item {
+                Text("Personal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            items(personalNotes) { item ->
+                LocalMemoryCard(
+                    item = item,
+                    title = "Personal note",
+                    description = "Local-only. Not in the medical chart.",
+                    containerColor = Color(0xFFF4ECFF),
+                    onDelete = onDelete
+                )
+            }
+        }
+
+        if (lockboxNotes.isNotEmpty()) {
+            item {
+                Text("Lockbox", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            items(lockboxNotes) { item ->
+                LocalMemoryCard(
+                    item = item,
+                    title = "Lockbox note",
+                    description = "Sensitive lane. No Gemini or medical chart write.",
+                    containerColor = Color(0xFFEAF1FA),
+                    onDelete = onDelete
+                )
+            }
+        }
+
+        if (petNotes.isNotEmpty()) {
+            item {
+                Text("Pets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            items(petNotes) { item ->
+                LocalMemoryCard(
+                    item = item,
+                    title = "Pet note",
+                    description = "Animal/pet context. Not a human medical chart.",
+                    containerColor = Color(0xFFEAF7ED),
+                    onDelete = onDelete
+                )
+            }
+        }
+
+        if (syncItems.isNotEmpty()) {
+            item {
+                Text("Medical outbox", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -3242,7 +4191,7 @@ fun SavedScreen(
             }
         }
 
-        items(offlineItems) { item ->
+        items(syncItems) { item ->
             val isFile = item.fileUri.isNotBlank()
             Card(
                 colors = CardDefaults.cardColors(
@@ -3272,6 +4221,43 @@ fun SavedScreen(
                     Text(item.createdAt, style = MaterialTheme.typography.bodySmall)
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun LocalMemoryCard(
+    item: OfflineItem,
+    title: String,
+    description: String,
+    containerColor: Color,
+    onDelete: (OfflineItem) -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (item.status == "personal_vault_synced" || item.status == "pet_vault_synced") {
+                            "$description Synced to desktop Personal Vault."
+                        } else if (item.status == "lockbox_vault_synced") {
+                            "$description Synced to trusted desktop Lockbox."
+                        } else {
+                            description
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF52635E)
+                    )
+                }
+                Button(onClick = { onDelete(item) }) { Text("Delete") }
+            }
+            Text(item.note, color = Color(0xFF1F2933))
+            Text(item.createdAt, style = MaterialTheme.typography.bodySmall, color = Color(0xFF52635E))
         }
     }
 }
@@ -3319,9 +4305,17 @@ fun SettingsScreen(
     onPair: (String) -> Unit,
     isPaired: Boolean,
     biometricEnabled: Boolean,
+    personalCloudEnabled: Boolean,
+    personalGeminiKeyConfigured: Boolean,
+    personalGeminiKeyInput: String,
+    personalCloudStatus: String,
     wirelessDebuggingEnabled: Boolean?,
     onEnableBiometric: () -> Unit,
     onDisableBiometric: () -> Unit,
+    onPersonalGeminiKeyChange: (String) -> Unit,
+    onSavePersonalGeminiKey: () -> Unit,
+    onClearPersonalGeminiKey: () -> Unit,
+    onTogglePersonalCloud: () -> Unit,
     onRefreshWirelessDebugging: () -> Unit,
     onOpenDeveloperOptions: () -> Unit
 ) {
@@ -3356,6 +4350,33 @@ fun SettingsScreen(
             Button(onClick = onDisableBiometric) { Text("Disable biometric unlock") }
         } else {
             Button(onClick = onEnableBiometric, enabled = isPaired) { Text("Enable face/fingerprint unlock") }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Personal cloud replies", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("For non-sensitive Personal Mode only. Medical, Lockbox, Pets, chart packets, and Data Hunter do not use this phone key.")
+        Text(personalCloudStatus, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Do not enter sensitive medical, financial, legal, password, identity, or deeply private information when Personal Cloud is on.",
+            color = Color(0xFF6B4A45),
+            style = MaterialTheme.typography.bodySmall
+        )
+        OutlinedTextField(
+            value = personalGeminiKeyInput,
+            onValueChange = onPersonalGeminiKeyChange,
+            label = { Text(if (personalGeminiKeyConfigured) "Replace Personal Gemini key" else "Personal Gemini API key") },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row {
+            Button(onClick = onSavePersonalGeminiKey, enabled = personalGeminiKeyInput.isNotBlank()) { Text("Save key") }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = onClearPersonalGeminiKey, enabled = personalGeminiKeyConfigured) { Text("Clear key") }
+        }
+        Button(
+            onClick = onTogglePersonalCloud,
+            enabled = personalGeminiKeyConfigured || personalCloudEnabled
+        ) {
+            Text(if (personalCloudEnabled) "Turn Personal Cloud off" else "Turn Personal Cloud on")
         }
         Spacer(Modifier.height(12.dp))
         Text("Developer install helper", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
