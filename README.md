@@ -31,8 +31,21 @@ The project is designed so a cautious user can inspect the source, rebuild local
 - A local-first medical-record organization prototype.
 - A source-protected chart workflow where raw files are treated as sacred.
 - A desktop authority with a phone companion front end/cache.
-- A place to separate user memory, accepted records, and future healthspan planning.
+- A place to separate chart evidence, user memory, pet context, accepted records, and future healthspan planning.
 - A beta-stage open-code project for careful local inspection and synthetic testing.
+
+## Optional User-Designed Lanes
+
+VitaMR/Dolly is intended to be adapted by each user. The public version should be treated as a starter framework, not a finished set of personal workflows. Users should design non-medical lanes around their own needs, privacy comfort, and local trust model.
+
+Recommended starter lanes:
+
+- **Medical Mode**: the protected human chart/evidence lane. This is where accepted records, chart questions, source documents, and evidence review belong.
+- **Personal Mode**: a non-medical idea space. A starter package might include idea capture, project notes, date recall, a simple personal inbox, source/citation tracking, and an exportable context pack. Public users should decide what belongs here and should avoid storing sensitive medical, financial, legal, password, identity, or deeply private material in this lane.
+- **Pets Mode**: a separate animal-care context. A starter package might include pet profiles, pet notes, vet-visit preparation, medications/supplements to review with a veterinarian, behavior observations, food/treat notes, and date recall. Pet context should not be mixed into human medical evidence.
+- **Lockbox or Sensitive Local Notes**: an optional local/trusted-host-only lane for sensitive notes. If implemented, this lane should be excluded from cloud curation by default.
+
+Personal and Pets are intentionally flexible. The public project should give users safe starter patterns, then let them reshape the lanes for their own household, projects, routines, and privacy boundaries.
 
 ## What VitaMR/Dolly Is Not
 
