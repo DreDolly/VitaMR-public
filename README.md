@@ -1,4 +1,4 @@
-# VitaMR / Dolly
+﻿# VitaMR / Dolly
 
 <p align="center">
   <img src="Resources/VitaMR_Heart.png" alt="VitaMR heart icon" width="96" />
@@ -25,6 +25,24 @@ Recommended trust path:
 5. Use real data only after trust is earned.
 
 The project is designed so a cautious user can inspect the source, rebuild locally, and test with a blank synthetic Bruce Wayne patient before considering any private use.
+
+## Safe Harbor Cleaner 1.3 Beta
+
+This public repo now includes **Safe Harbor Cleaner 1.3-beta**, a standalone local Windows app for HIPAA Safe Harbor candidate de-identification.
+
+Source and full instructions:
+
+```text
+tools/SafeHarborDeidDesktop/README.md
+```
+
+Direct Windows x64 beta download after release asset is committed:
+
+```text
+https://github.com/DreDolly/VitaMR-public/raw/master/downloads/SafeHarborCleaner-v1.3-beta-win-x64.zip
+```
+
+Safe Harbor Cleaner can run in non-AI local deterministic mode with no API key and no cloud account. Optional AI Mode requires a local Ollama-compatible server and local models. See the tool README for requirements, build commands, direct-download instructions, AI Mode setup, supported files, and limitations.
 
 ## What VitaMR/Dolly Is
 
@@ -596,3 +614,6 @@ The public repo should contain no real PHI, no real uploaded photos, no private 
 ## License
 
 This project is licensed under the Apache License 2.0. See the LICENSE file for details.
+
+
+
